@@ -1,0 +1,10 @@
+.{
+    .name = "scop",
+    .version = "0.1.0",
+    .dependencies = .{
+        .vulkan_zig = .{
+            .url = "https://github.com/Snektron/vulkan-zig/archive/ed9401c72e999e269b3cc26ff2606895b41ed2e5.tar.gz",
+            .hash = "122044bdb044f78c2e638aecb56328241132f18c9000f9d0ceaefa0650be341f2ac0",
+        },
+    },
+}
