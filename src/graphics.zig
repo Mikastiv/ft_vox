@@ -1,7 +1,6 @@
 const std = @import("std");
 const vk = @import("vulkan");
 const c = @import("c.zig");
-const glfw = @import("glfw.zig");
 
 const Allocator = std.mem.Allocator;
 
@@ -16,6 +15,7 @@ const DebugMessenger = if (enable_validation) vk.DebugUtilsMessengerEXT else voi
 const BaseFunctions = vk.BaseWrapper(.{
     .createInstance = true,
     .getInstanceProcAddr = true,
+    .enumerateInstanceLayerProperties = true,
 });
 
 const InstanceFunctions = vk.InstanceWrapper(.{
@@ -58,7 +58,7 @@ pub const Ctx = struct {
         errdefer deinitDebugCallback(instance, vki, debug_messenger);
         vulkanLog("debug callback initialized", .{});
 
-        const surface = try glfw.createWindowSurface(instance, window);
+        const surface = try createWindowSurface(instance, window);
         errdefer vki.destroySurfaceKHR(instance, surface, allocation_callbacks);
         vulkanLog("surface created", .{});
 
@@ -82,6 +82,10 @@ pub const Ctx = struct {
 };
 
 fn createInstance(vkb: BaseFunctions, allocator: Allocator, app_name: [*:0]const u8) !vk.Instance {
+    if (enable_validation and !try checkValidationLayerSupport(vkb, allocator)) {
+        return error.ValidationLayerRequestedButNotAvailable;
+    }
+
     const app_info = vk.ApplicationInfo{
         .p_application_name = app_name,
         .application_version = vk.makeApiVersion(0, 1, 0, 0),
@@ -93,6 +97,7 @@ fn createInstance(vkb: BaseFunctions, allocator: Allocator, app_name: [*:0]const
     const extensions = try getRequiredExtensions(allocator);
     defer allocator.free(extensions);
 
+    const debug_messenger_create_info = createDebugMessengerCreateInfo();
     return try vkb.createInstance(
         &.{
             .p_application_info = &app_info,
@@ -100,6 +105,7 @@ fn createInstance(vkb: BaseFunctions, allocator: Allocator, app_name: [*:0]const
             .pp_enabled_extension_names = extensions.ptr,
             .enabled_layer_count = if (enable_validation) @as(u32, @intCast(validation_layers.len)) else 0,
             .pp_enabled_layer_names = if (enable_validation) &validation_layers else null,
+            .p_next = if (enable_validation) &debug_messenger_create_info else null,
         },
         allocation_callbacks,
     );
@@ -121,9 +127,32 @@ fn getRequiredExtensions(allocator: Allocator) ![][*:0]const u8 {
     return extensions.toOwnedSlice();
 }
 
-fn initDebugCallback(instance: vk.Instance, vki: InstanceFunctions) !DebugMessenger {
-    if (!enable_validation) return;
+fn checkValidationLayerSupport(vkb: BaseFunctions, allocator: Allocator) !bool {
+    var layer_count: u32 = 0;
+    _ = try vkb.enumerateInstanceLayerProperties(&layer_count, null);
 
+    var layer_properties = try allocator.alloc(vk.LayerProperties, layer_count);
+    defer allocator.free(layer_properties);
+
+    _ = try vkb.enumerateInstanceLayerProperties(&layer_count, layer_properties.ptr);
+
+    for (validation_layers) |layer_name| {
+        var layer_found = false;
+
+        for (layer_properties) |layer| {
+            if (std.mem.orderZ(u8, @as([*:0]const u8, @ptrCast(&layer.layer_name)), layer_name) == .eq) {
+                layer_found = true;
+                break;
+            }
+        }
+
+        if (!layer_found) return false;
+    }
+
+    return true;
+}
+
+fn createDebugMessengerCreateInfo() vk.DebugUtilsMessengerCreateInfoEXT {
     const msg_severity = vk.DebugUtilsMessageSeverityFlagsEXT{
         .verbose_bit_ext = true,
         .info_bit_ext = true,
@@ -137,13 +166,20 @@ fn initDebugCallback(instance: vk.Instance, vki: InstanceFunctions) !DebugMessen
         .performance_bit_ext = true,
     };
 
+    return .{
+        .message_severity = msg_severity,
+        .message_type = msg_types,
+        .pfn_user_callback = debugMessageCallback,
+    };
+}
+
+fn initDebugCallback(instance: vk.Instance, vki: InstanceFunctions) !DebugMessenger {
+    if (!enable_validation) return;
+
+    const create_info = createDebugMessengerCreateInfo();
     return vki.createDebugUtilsMessengerEXT(
         instance,
-        &.{
-            .message_severity = msg_severity,
-            .message_type = msg_types,
-            .pfn_user_callback = debugMessageCallback,
-        },
+        &create_info,
         allocation_callbacks,
     );
 }
@@ -155,17 +191,37 @@ fn deinitDebugCallback(instance: vk.Instance, vki: InstanceFunctions, debug_mess
 }
 
 fn debugMessageCallback(
-    _: vk.DebugUtilsMessageSeverityFlagsEXT,
+    severity: vk.DebugUtilsMessageSeverityFlagsEXT,
     _: vk.DebugUtilsMessageTypeFlagsEXT,
     p_callback_data: ?*const vk.DebugUtilsMessengerCallbackDataEXT,
     _: ?*anyopaque,
 ) callconv(vk.vulkan_call_conv) vk.Bool32 {
     if (p_callback_data) |data| {
-        std.log.warn("{s}", .{std.mem.sliceTo(data.p_message, 0)});
+        const format = "vulkan validation: {s}";
+        const msg = std.mem.sliceTo(data.p_message, 0);
+
+        if (severity.error_bit_ext) {
+            std.log.err(format, .{msg});
+        } else if (severity.warning_bit_ext) {
+            std.log.warn(format, .{msg});
+        } else if (severity.info_bit_ext) {
+            // std.log.info(format, .{msg});
+        } else {
+            // std.log.debug(format, .{msg});
+        }
     }
     return vk.FALSE;
 }
 
 fn vulkanLog(comptime format: []const u8, args: anytype) void {
     std.log.info("vulkan: " ++ format, args);
+}
+
+fn createWindowSurface(instance: vk.Instance, window: *c.GLFWwindow) !vk.SurfaceKHR {
+    var surface: vk.SurfaceKHR = undefined;
+    if (c.glfwCreateWindowSurface(instance, window, null, &surface) != .success) {
+        return error.SurfaceCreationFailed;
+    }
+
+    return surface;
 }

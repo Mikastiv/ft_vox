@@ -1,6 +1,5 @@
 const c = @import("c.zig");
 const std = @import("std");
-const vk = @import("vulkan");
 
 fn errorCallback(code: c_int, description: [*c]const u8) callconv(.C) void {
     std.log.err("{d} - {s}\n", .{ code, description });
@@ -33,13 +32,4 @@ pub fn windowShouldClose(window: *c.GLFWwindow) bool {
 
 pub fn pollEvents() void {
     c.glfwPollEvents();
-}
-
-pub fn createWindowSurface(instance: vk.Instance, window: *c.GLFWwindow) !vk.SurfaceKHR {
-    var surface: vk.SurfaceKHR = undefined;
-    if (c.glfwCreateWindowSurface(instance, window, null, &surface) != .success) {
-        return error.SurfaceInitFailed;
-    }
-
-    return surface;
 }
