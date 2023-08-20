@@ -87,6 +87,7 @@ pub const Ctx = struct {
     physical_device: PhysicalDevice,
     device: vk.Device,
     graphics_queue: vk.Queue,
+    present_queue: vk.Queue,
 
     debug_messenger: DebugMessenger,
 
@@ -109,13 +110,15 @@ pub const Ctx = struct {
         const physical_device = try pickPhysicalDevice(instance, vki, allocator, surface);
         vulkanLog("selected physical device {s}", .{@as([*:0]const u8, @ptrCast(&physical_device.properties.device_name))});
 
-        const device = try createLogicalDevice(vki, physical_device);
+        const device = try createLogicalDevice(vki, allocator, physical_device);
         const vkd = try DeviceFunctions.load(device, vki.dispatch.vkGetDeviceProcAddr);
         errdefer vkd.destroyDevice(device, allocation_callbacks);
         vulkanLog("device created", .{});
 
         const graphics_queue = vkd.getDeviceQueue(device, physical_device.graphics_family, 0);
         vulkanLog("graphics family index {d}", .{physical_device.graphics_family});
+        const present_queue = vkd.getDeviceQueue(device, physical_device.present_family, 0);
+        vulkanLog("present family index {d}", .{physical_device.present_family});
 
         return .{
             .vki = vki,
@@ -126,6 +129,7 @@ pub const Ctx = struct {
             .physical_device = physical_device,
             .device = device,
             .graphics_queue = graphics_queue,
+            .present_queue = present_queue,
             .debug_messenger = debug_messenger,
         };
     }
@@ -145,21 +149,33 @@ pub const Ctx = struct {
     }
 };
 
-fn createLogicalDevice(vki: InstanceFunctions, physical_device: PhysicalDevice) !vk.Device {
+fn createLogicalDevice(vki: InstanceFunctions, allocator: Allocator, physical_device: PhysicalDevice) !vk.Device {
+    var unique_queues_families = std.AutoHashMap(u32, void).init(allocator);
+    defer unique_queues_families.deinit();
+
+    try unique_queues_families.put(physical_device.graphics_family, {});
+    try unique_queues_families.put(physical_device.present_family, {});
+
+    var queue_create_infos = std.ArrayList(vk.DeviceQueueCreateInfo).init(allocator);
+    defer queue_create_infos.deinit();
+
     const queue_priority = [_]f32{1};
-    const queue_create_info = [_]vk.DeviceQueueCreateInfo{
-        .{
-            .queue_family_index = physical_device.graphics_family,
+
+    var it = unique_queues_families.iterator();
+    while (it.next()) |queue_family| {
+        const queue_create_info = vk.DeviceQueueCreateInfo{
+            .queue_family_index = queue_family.key_ptr.*,
             .queue_count = 1,
             .p_queue_priorities = &queue_priority,
-        },
-    };
+        };
+        try queue_create_infos.append(queue_create_info);
+    }
 
     const physical_device_features = vk.PhysicalDeviceFeatures{};
 
     const device_create_info = vk.DeviceCreateInfo{
-        .queue_create_info_count = queue_create_info.len,
-        .p_queue_create_infos = &queue_create_info,
+        .queue_create_info_count = @as(u32, @intCast(queue_create_infos.items.len)),
+        .p_queue_create_infos = queue_create_infos.items.ptr,
         .p_enabled_features = &physical_device_features,
         .enabled_extension_count = required_device_extensions.len,
         .pp_enabled_extension_names = @as([*]const [*:0]const u8, @ptrCast(&required_device_extensions)),
