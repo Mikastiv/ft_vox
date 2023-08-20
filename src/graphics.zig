@@ -7,7 +7,7 @@ const Allocator = std.mem.Allocator;
 const enable_validation = std.debug.runtime_safety;
 const validation_layers = [_][*:0]const u8{"VK_LAYER_KHRONOS_validation"};
 const debug_extensions = [_][*:0]const u8{vk.extension_info.ext_debug_utils.name};
-const device_extensions = [_][*:0]const u8{vk.extension_info.khr_swapchain.name};
+const required_device_extensions = [_][*:0]const u8{vk.extension_info.khr_swapchain.name};
 const allocation_callbacks = null;
 
 const DebugMessenger = if (enable_validation) vk.DebugUtilsMessengerEXT else void;
@@ -35,14 +35,50 @@ const InstanceFunctions = vk.InstanceWrapper(.{
     .destroyDebugUtilsMessengerEXT = enable_validation,
 });
 
+const QueueFamilies = struct {
+    const Self = @This();
+
+    graphics_family: ?u32 = null,
+    present_family: ?u32 = null,
+
+    fn isComplete(self: Self) bool {
+        return self.graphics_family != null and self.present_family != null;
+    }
+};
+
+const PhysicalDevice = struct {
+    const Self = @This();
+
+    handle: vk.PhysicalDevice,
+    properties: vk.PhysicalDeviceProperties,
+    memory_properties: vk.PhysicalDeviceMemoryProperties,
+    graphics_family: u32,
+    present_family: u32,
+
+    fn init(vki: InstanceFunctions, allocator: Allocator, device: vk.PhysicalDevice, surface: vk.SurfaceKHR) !Self {
+        const queue_families = try findQueueFamilies(vki, allocator, device, surface);
+        std.debug.assert(queue_families.isComplete());
+
+        return .{
+            .handle = device,
+            .properties = vki.getPhysicalDeviceProperties(device),
+            .memory_properties = vki.getPhysicalDeviceMemoryProperties(device),
+            .graphics_family = queue_families.graphics_family.?,
+            .present_family = queue_families.present_family.?,
+        };
+    }
+};
+
 pub const Ctx = struct {
     const Self = @This();
 
     vki: InstanceFunctions,
 
     allocator: std.mem.Allocator,
+
     instance: vk.Instance,
     surface: vk.SurfaceKHR,
+    physical_device: PhysicalDevice,
 
     debug_messenger: DebugMessenger,
 
@@ -62,11 +98,15 @@ pub const Ctx = struct {
         errdefer vki.destroySurfaceKHR(instance, surface, allocation_callbacks);
         vulkanLog("surface created", .{});
 
+        const physical_device = try pickPhysicalDevice(instance, vki, allocator, surface);
+        vulkanLog("selected physical device {s}", .{@as([*:0]const u8, @ptrCast(&physical_device.properties.device_name))});
+
         return .{
             .vki = vki,
             .allocator = allocator,
             .instance = instance,
             .surface = surface,
+            .physical_device = physical_device,
             .debug_messenger = debug_messenger,
         };
     }
@@ -224,4 +264,125 @@ fn createWindowSurface(instance: vk.Instance, window: *c.GLFWwindow) !vk.Surface
     }
 
     return surface;
+}
+
+fn pickPhysicalDevice(instance: vk.Instance, vki: InstanceFunctions, allocator: Allocator, surface: vk.SurfaceKHR) !PhysicalDevice {
+    const physical_device_handles = try listSuitablePhysicalDevices(instance, vki, allocator, surface);
+    defer allocator.free(physical_device_handles);
+
+    const physical_devices = try allocator.alloc(PhysicalDevice, physical_device_handles.len);
+    defer allocator.free(physical_devices);
+
+    for (physical_devices, physical_device_handles) |*device, handle| {
+        device.* = try PhysicalDevice.init(vki, allocator, handle, surface);
+    }
+
+    std.sort.insertion(PhysicalDevice, physical_devices, {}, comparePhysicalDevices);
+
+    return physical_devices[0];
+}
+
+fn comparePhysicalDevices(_: void, a: PhysicalDevice, b: PhysicalDevice) bool {
+    const a_is_discrete = a.properties.device_type == .discrete_gpu;
+    const b_is_discrete = b.properties.device_type == .discrete_gpu;
+    if (a_is_discrete != b_is_discrete) {
+        return a_is_discrete;
+    }
+
+    return true;
+}
+
+fn listSuitablePhysicalDevices(instance: vk.Instance, vki: InstanceFunctions, allocator: Allocator, surface: vk.SurfaceKHR) ![]vk.PhysicalDevice {
+    var device_count: u32 = 0;
+    _ = try vki.enumeratePhysicalDevices(instance, &device_count, null);
+
+    const devices = try allocator.alloc(vk.PhysicalDevice, device_count);
+    defer allocator.free(devices);
+
+    _ = try vki.enumeratePhysicalDevices(instance, &device_count, devices.ptr);
+
+    var suitables = std.ArrayList(vk.PhysicalDevice).init(allocator);
+    errdefer suitables.deinit();
+
+    for (devices) |device| {
+        if (try isDeviceSuitable(vki, allocator, device, surface)) {
+            try suitables.append(device);
+        }
+    }
+
+    return suitables.toOwnedSlice();
+}
+
+fn isDeviceSuitable(vki: InstanceFunctions, allocator: Allocator, device: vk.PhysicalDevice, surface: vk.SurfaceKHR) !bool {
+    if (!try checkDeviceExtensionSupport(vki, allocator, device)) return false;
+
+    const queue_families = try findQueueFamilies(vki, allocator, device, surface);
+
+    const swap_chain_support = try checkSwapChainSupport(vki, device, surface);
+
+    return queue_families.isComplete() and swap_chain_support;
+}
+
+fn checkSwapChainSupport(vki: InstanceFunctions, device: vk.PhysicalDevice, surface: vk.SurfaceKHR) !bool {
+    var format_count: u32 = undefined;
+    _ = try vki.getPhysicalDeviceSurfaceFormatsKHR(device, surface, &format_count, null);
+
+    var present_mode_count: u32 = undefined;
+    _ = try vki.getPhysicalDeviceSurfacePresentModesKHR(device, surface, &present_mode_count, null);
+
+    return format_count > 0 and present_mode_count > 0;
+}
+
+fn checkDeviceExtensionSupport(vki: InstanceFunctions, allocator: Allocator, device: vk.PhysicalDevice) !bool {
+    var extension_count: u32 = 0;
+    _ = try vki.enumerateDeviceExtensionProperties(device, null, &extension_count, null);
+
+    const extensions = try allocator.alloc(vk.ExtensionProperties, extension_count);
+    defer allocator.free(extensions);
+
+    _ = try vki.enumerateDeviceExtensionProperties(device, null, &extension_count, extensions.ptr);
+
+    for (required_device_extensions) |extension_name| {
+        var extension_found = false;
+
+        for (extensions) |extension| {
+            if (std.mem.orderZ(u8, @as([*:0]const u8, @ptrCast(&extension.extension_name)), extension_name) == .eq) {
+                extension_found = true;
+                break;
+            }
+        }
+
+        if (!extension_found) return false;
+    }
+
+    return true;
+}
+
+fn findQueueFamilies(vki: InstanceFunctions, allocator: Allocator, device: vk.PhysicalDevice, surface: vk.SurfaceKHR) !QueueFamilies {
+    var queue_families = QueueFamilies{};
+
+    var family_count: u32 = 0;
+    vki.getPhysicalDeviceQueueFamilyProperties(device, &family_count, null);
+
+    var families = try allocator.alloc(vk.QueueFamilyProperties, family_count);
+    defer allocator.free(families);
+
+    vki.getPhysicalDeviceQueueFamilyProperties(device, &family_count, families.ptr);
+
+    for (families, 0..) |family, i| {
+        const idx: u32 = @intCast(i);
+
+        if (queue_families.graphics_family == null and family.queue_count > 0 and family.queue_flags.graphics_bit) {
+            queue_families.graphics_family = idx;
+        }
+
+        const present_support = try vki.getPhysicalDeviceSurfaceSupportKHR(device, idx, surface) == vk.TRUE;
+        if (queue_families.present_family == null and present_support) {
+            queue_families.present_family = idx;
+        }
+
+        if (queue_families.isComplete()) break;
+    }
+
+    return queue_families;
 }
