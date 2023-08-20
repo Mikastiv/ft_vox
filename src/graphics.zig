@@ -42,6 +42,8 @@ const DeviceFunctions = vk.DeviceWrapper(.{
     .createSwapchainKHR = true,
     .destroySwapchainKHR = true,
     .getSwapchainImagesKHR = true,
+    .createImageView = true,
+    .destroyImageView = true,
 });
 
 const QueueFamiliesIndices = struct {
@@ -99,6 +101,7 @@ pub const Ctx = struct {
     swapchain_extent: vk.Extent2D,
     swapchain: vk.SwapchainKHR,
     swapchain_images: []vk.Image,
+    swapchain_image_views: []vk.ImageView,
 
     debug_messenger: DebugMessenger,
 
@@ -158,6 +161,10 @@ pub const Ctx = struct {
         const swapchain_images = try fetchSwapchainImages(vkd, allocator, device, swapchain);
         errdefer allocator.free(swapchain_images);
 
+        const swapchain_image_views = try createImageViews(vkd, allocator, device, swapchain_images, surface_format.format);
+        errdefer allocator.free(swapchain_image_views);
+        vulkanLog("swapchain image views created", .{});
+
         return .{
             .vki = vki,
             .vkd = vkd,
@@ -172,11 +179,18 @@ pub const Ctx = struct {
             .swapchain_extent = extent,
             .swapchain = swapchain,
             .swapchain_images = swapchain_images,
+            .swapchain_image_views = swapchain_image_views,
             .debug_messenger = debug_messenger,
         };
     }
 
     pub fn deinit(self: *Self) void {
+        for (self.swapchain_image_views) |view| {
+            self.vkd.destroyImageView(self.device, view, allocation_callbacks);
+        }
+        vulkanLog("swapchain image views destroyed", .{});
+        self.allocator.free(self.swapchain_image_views);
+
         self.allocator.free(self.swapchain_images);
 
         self.vkd.destroySwapchainKHR(self.device, self.swapchain, allocation_callbacks);
@@ -196,7 +210,48 @@ pub const Ctx = struct {
     }
 };
 
-fn fetchSwapchainImages(vkd: DeviceFunctions, allocator: Allocator, device: vk.Device, swapchain: vk.SwapchainKHR) ![]vk.Image {
+fn createImageViews(
+    vkd: DeviceFunctions,
+    allocator: Allocator,
+    device: vk.Device,
+    images: []vk.Image,
+    format: vk.Format,
+) ![]vk.ImageView {
+    const image_views = try allocator.alloc(vk.ImageView, images.len);
+    errdefer allocator.free(image_views);
+
+    for (images, image_views) |image, *view| {
+        const create_info = vk.ImageViewCreateInfo{
+            .image = image,
+            .view_type = .@"2d",
+            .format = format,
+            .components = .{
+                .r = .identity,
+                .g = .identity,
+                .b = .identity,
+                .a = .identity,
+            },
+            .subresource_range = .{
+                .aspect_mask = .{ .color_bit = true },
+                .base_mip_level = 0,
+                .level_count = 1,
+                .base_array_layer = 0,
+                .layer_count = 1,
+            },
+        };
+
+        view.* = try vkd.createImageView(device, &create_info, allocation_callbacks);
+    }
+
+    return image_views;
+}
+
+fn fetchSwapchainImages(
+    vkd: DeviceFunctions,
+    allocator: Allocator,
+    device: vk.Device,
+    swapchain: vk.SwapchainKHR,
+) ![]vk.Image {
     var image_count: u32 = 0;
     _ = try vkd.getSwapchainImagesKHR(device, swapchain, &image_count, null);
 
