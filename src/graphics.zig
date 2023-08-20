@@ -41,6 +41,7 @@ const DeviceFunctions = vk.DeviceWrapper(.{
     .getDeviceQueue = true,
     .createSwapchainKHR = true,
     .destroySwapchainKHR = true,
+    .getSwapchainImagesKHR = true,
 });
 
 const QueueFamiliesIndices = struct {
@@ -94,7 +95,10 @@ pub const Ctx = struct {
     device: vk.Device,
     graphics_queue: vk.Queue,
     present_queue: vk.Queue,
+    swapchain_image_format: vk.Format,
+    swapchain_extent: vk.Extent2D,
     swapchain: vk.SwapchainKHR,
+    swapchain_images: []vk.Image,
 
     debug_messenger: DebugMessenger,
 
@@ -127,9 +131,32 @@ pub const Ctx = struct {
         const present_queue = vkd.getDeviceQueue(device, physical_device.present_family, 0);
         vulkanLog("present family index {d}", .{physical_device.present_family});
 
-        const swapchain = try createSwapchain(vki, vkd, allocator, physical_device, device, surface, window);
+        const surface_format = try pickSwapSurfaceFormat(vki, allocator, physical_device.handle, surface);
+        vulkanLog("selected swapchain image format {s}", .{@tagName(surface_format.format)});
+        vulkanLog("selected swapchain image color space {s}", .{@tagName(surface_format.color_space)});
+
+        const present_mode = try pickSwapPresentMode(vki, allocator, physical_device.handle, surface);
+        vulkanLog("selected present mode {s}", .{@tagName(present_mode)});
+
+        const surface_capabilities = try vki.getPhysicalDeviceSurfaceCapabilitiesKHR(physical_device.handle, surface);
+        const extent = try pickSwapExtent(surface_capabilities, window);
+        vulkanLog("selected extent {d}x{d}", .{ extent.width, extent.height });
+
+        const swapchain = try createSwapchain(
+            vkd,
+            physical_device,
+            device,
+            surface,
+            surface_format,
+            present_mode,
+            surface_capabilities,
+            extent,
+        );
         errdefer vkd.destroySwapchainKHR(device, swapchain, allocation_callbacks);
         vulkanLog("swapchain created", .{});
+
+        const swapchain_images = try fetchSwapchainImages(vkd, allocator, device, swapchain);
+        errdefer allocator.free(swapchain_images);
 
         return .{
             .vki = vki,
@@ -141,12 +168,17 @@ pub const Ctx = struct {
             .device = device,
             .graphics_queue = graphics_queue,
             .present_queue = present_queue,
+            .swapchain_image_format = surface_format.format,
+            .swapchain_extent = extent,
             .swapchain = swapchain,
+            .swapchain_images = swapchain_images,
             .debug_messenger = debug_messenger,
         };
     }
 
     pub fn deinit(self: *Self) void {
+        self.allocator.free(self.swapchain_images);
+
         self.vkd.destroySwapchainKHR(self.device, self.swapchain, allocation_callbacks);
         vulkanLog("swapchain destroyed", .{});
 
@@ -164,30 +196,33 @@ pub const Ctx = struct {
     }
 };
 
+fn fetchSwapchainImages(vkd: DeviceFunctions, allocator: Allocator, device: vk.Device, swapchain: vk.SwapchainKHR) ![]vk.Image {
+    var image_count: u32 = 0;
+    _ = try vkd.getSwapchainImagesKHR(device, swapchain, &image_count, null);
+
+    const swapchain_images = try allocator.alloc(vk.Image, image_count);
+    errdefer allocator.free(swapchain_images);
+
+    _ = try vkd.getSwapchainImagesKHR(device, swapchain, &image_count, swapchain_images.ptr);
+
+    return swapchain_images;
+}
+
 fn createSwapchain(
-    vki: InstanceFunctions,
     vkd: DeviceFunctions,
-    allocator: Allocator,
     physical_device: PhysicalDevice,
     device: vk.Device,
     surface: vk.SurfaceKHR,
-    window: *c.GLFWwindow,
+    surface_format: vk.SurfaceFormatKHR,
+    present_mode: vk.PresentModeKHR,
+    surface_capabilities: vk.SurfaceCapabilitiesKHR,
+    extent: vk.Extent2D,
 ) !vk.SwapchainKHR {
-    const surface_format = try pickSwapSurfaceFormat(vki, allocator, physical_device.handle, surface);
-    vulkanLog("selected surface format {s}", .{@tagName(surface_format.format)});
-    vulkanLog("selected surface color space {s}", .{@tagName(surface_format.color_space)});
-
-    const present_mode = try pickSwapPresentMode(vki, allocator, physical_device.handle, surface);
-    vulkanLog("selected present mode {s}", .{@tagName(present_mode)});
-
-    const surface_capabilities = try vki.getPhysicalDeviceSurfaceCapabilitiesKHR(physical_device.handle, surface);
-    const extent = try pickSwapExtent(surface_capabilities, window);
-    vulkanLog("selected extent {d}x{d}", .{ extent.width, extent.height });
-
     var image_count = surface_capabilities.min_image_count + 1;
     if (surface_capabilities.min_image_count > 0 and image_count > surface_capabilities.max_image_count) {
         image_count = surface_capabilities.max_image_count;
     }
+    vulkanLog("backbuffer count {d}", .{image_count});
 
     const same_family = physical_device.graphics_family == physical_device.present_family;
     const queue_family_indices = [_]u32{ physical_device.graphics_family, physical_device.present_family };
