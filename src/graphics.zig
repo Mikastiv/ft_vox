@@ -83,6 +83,78 @@ const PhysicalDevice = struct {
     }
 };
 
+const Swapchain = struct {
+    const Self = @This();
+
+    vkd: DeviceFunctions,
+    allocator: Allocator,
+
+    handle: vk.SwapchainKHR,
+    device: vk.Device,
+    image_format: vk.Format,
+    color_space: vk.ColorSpaceKHR,
+    present_mode: vk.PresentModeKHR,
+    extent: vk.Extent2D,
+    images: []vk.Image,
+    image_views: []vk.ImageView,
+
+    fn init(
+        vki: InstanceFunctions,
+        vkd: DeviceFunctions,
+        allocator: Allocator,
+        physical_device: PhysicalDevice,
+        device: vk.Device,
+        surface: vk.SurfaceKHR,
+        window: *c.GLFWwindow,
+    ) !Self {
+        const surface_format = try pickSwapSurfaceFormat(vki, allocator, physical_device.handle, surface);
+        const present_mode = try pickSwapPresentMode(vki, allocator, physical_device.handle, surface);
+        const surface_capabilities = try vki.getPhysicalDeviceSurfaceCapabilitiesKHR(physical_device.handle, surface);
+        const extent = try pickSwapExtent(surface_capabilities, window);
+
+        const swapchain = try createSwapchain(
+            vkd,
+            physical_device,
+            device,
+            surface,
+            surface_format,
+            present_mode,
+            surface_capabilities,
+            extent,
+        );
+
+        const swapchain_images = try fetchSwapchainImages(vkd, allocator, device, swapchain);
+        errdefer allocator.free(swapchain_images);
+
+        const swapchain_image_views = try createImageViews(vkd, allocator, device, swapchain_images, surface_format.format);
+        errdefer allocator.free(swapchain_image_views);
+
+        return .{
+            .vkd = vkd,
+            .allocator = allocator,
+            .handle = swapchain,
+            .device = device,
+            .image_format = surface_format.format,
+            .color_space = surface_format.color_space,
+            .present_mode = present_mode,
+            .extent = extent,
+            .images = swapchain_images,
+            .image_views = swapchain_image_views,
+        };
+    }
+
+    fn deinit(self: *Self) void {
+        for (self.image_views) |view| {
+            self.vkd.destroyImageView(self.device, view, allocation_callbacks);
+        }
+        self.allocator.free(self.image_views);
+
+        self.allocator.free(self.images);
+
+        self.vkd.destroySwapchainKHR(self.device, self.handle, allocation_callbacks);
+    }
+};
+
 pub const Ctx = struct {
     const Self = @This();
 
@@ -97,11 +169,7 @@ pub const Ctx = struct {
     device: vk.Device,
     graphics_queue: vk.Queue,
     present_queue: vk.Queue,
-    swapchain_image_format: vk.Format,
-    swapchain_extent: vk.Extent2D,
-    swapchain: vk.SwapchainKHR,
-    swapchain_images: []vk.Image,
-    swapchain_image_views: []vk.ImageView,
+    swapchain: Swapchain,
 
     debug_messenger: DebugMessenger,
 
@@ -134,36 +202,13 @@ pub const Ctx = struct {
         const present_queue = vkd.getDeviceQueue(device, physical_device.present_family, 0);
         vulkanLog("present family index {d}", .{physical_device.present_family});
 
-        const surface_format = try pickSwapSurfaceFormat(vki, allocator, physical_device.handle, surface);
-        vulkanLog("selected swapchain image format {s}", .{@tagName(surface_format.format)});
-        vulkanLog("selected swapchain image color space {s}", .{@tagName(surface_format.color_space)});
-
-        const present_mode = try pickSwapPresentMode(vki, allocator, physical_device.handle, surface);
-        vulkanLog("selected present mode {s}", .{@tagName(present_mode)});
-
-        const surface_capabilities = try vki.getPhysicalDeviceSurfaceCapabilitiesKHR(physical_device.handle, surface);
-        const extent = try pickSwapExtent(surface_capabilities, window);
-        vulkanLog("selected extent {d}x{d}", .{ extent.width, extent.height });
-
-        const swapchain = try createSwapchain(
-            vkd,
-            physical_device,
-            device,
-            surface,
-            surface_format,
-            present_mode,
-            surface_capabilities,
-            extent,
-        );
-        errdefer vkd.destroySwapchainKHR(device, swapchain, allocation_callbacks);
+        var swapchain = try Swapchain.init(vki, vkd, allocator, physical_device, device, surface, window);
+        errdefer swapchain.deinit();
         vulkanLog("swapchain created", .{});
-
-        const swapchain_images = try fetchSwapchainImages(vkd, allocator, device, swapchain);
-        errdefer allocator.free(swapchain_images);
-
-        const swapchain_image_views = try createImageViews(vkd, allocator, device, swapchain_images, surface_format.format);
-        errdefer allocator.free(swapchain_image_views);
-        vulkanLog("swapchain image views created", .{});
+        vulkanLog("selected swapchain image format {s}", .{@tagName(swapchain.image_format)});
+        vulkanLog("selected swapchain image color space {s}", .{@tagName(swapchain.color_space)});
+        vulkanLog("selected present mode {s}", .{@tagName(swapchain.present_mode)});
+        vulkanLog("selected extent {d}x{d}", .{ swapchain.extent.width, swapchain.extent.height });
 
         return .{
             .vki = vki,
@@ -175,25 +220,13 @@ pub const Ctx = struct {
             .device = device,
             .graphics_queue = graphics_queue,
             .present_queue = present_queue,
-            .swapchain_image_format = surface_format.format,
-            .swapchain_extent = extent,
             .swapchain = swapchain,
-            .swapchain_images = swapchain_images,
-            .swapchain_image_views = swapchain_image_views,
             .debug_messenger = debug_messenger,
         };
     }
 
     pub fn deinit(self: *Self) void {
-        for (self.swapchain_image_views) |view| {
-            self.vkd.destroyImageView(self.device, view, allocation_callbacks);
-        }
-        vulkanLog("swapchain image views destroyed", .{});
-        self.allocator.free(self.swapchain_image_views);
-
-        self.allocator.free(self.swapchain_images);
-
-        self.vkd.destroySwapchainKHR(self.device, self.swapchain, allocation_callbacks);
+        self.swapchain.deinit();
         vulkanLog("swapchain destroyed", .{});
 
         self.vkd.destroyDevice(self.device, allocation_callbacks);
