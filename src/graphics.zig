@@ -27,6 +27,7 @@ const InstanceFunctions = vk.InstanceWrapper(.{
     .enumerateDeviceExtensionProperties = true,
     .getPhysicalDeviceSurfaceFormatsKHR = true,
     .getPhysicalDeviceSurfacePresentModesKHR = true,
+    .getPhysicalDeviceSurfaceCapabilitiesKHR = true,
     .getPhysicalDeviceQueueFamilyProperties = true,
     .getPhysicalDeviceSurfaceSupportKHR = true,
     .destroySurfaceKHR = true,
@@ -38,6 +39,8 @@ const InstanceFunctions = vk.InstanceWrapper(.{
 const DeviceFunctions = vk.DeviceWrapper(.{
     .destroyDevice = true,
     .getDeviceQueue = true,
+    .createSwapchainKHR = true,
+    .destroySwapchainKHR = true,
 });
 
 const QueueFamiliesIndices = struct {
@@ -62,7 +65,10 @@ const PhysicalDevice = struct {
 
     fn init(vki: InstanceFunctions, allocator: Allocator, device: vk.PhysicalDevice, surface: vk.SurfaceKHR) !Self {
         const queue_families = try findQueueFamilies(vki, allocator, device, surface);
-        std.debug.assert(queue_families.isComplete());
+
+        if (!queue_families.isComplete()) {
+            return error.QueueFamiliesIncomplete;
+        }
 
         return .{
             .handle = device,
@@ -88,6 +94,7 @@ pub const Ctx = struct {
     device: vk.Device,
     graphics_queue: vk.Queue,
     present_queue: vk.Queue,
+    swapchain: vk.SwapchainKHR,
 
     debug_messenger: DebugMessenger,
 
@@ -99,8 +106,8 @@ pub const Ctx = struct {
         errdefer vki.destroyInstance(instance, allocation_callbacks);
         vulkanLog("instance created", .{});
 
-        const debug_messenger = try initDebugCallback(instance, vki);
-        errdefer deinitDebugCallback(instance, vki, debug_messenger);
+        const debug_messenger = try initDebugMessenger(instance, vki);
+        errdefer deinitDebugMessenger(instance, vki, debug_messenger);
         vulkanLog("debug callback initialized", .{});
 
         const surface = try createWindowSurface(instance, window);
@@ -120,6 +127,10 @@ pub const Ctx = struct {
         const present_queue = vkd.getDeviceQueue(device, physical_device.present_family, 0);
         vulkanLog("present family index {d}", .{physical_device.present_family});
 
+        const swapchain = try createSwapchain(vki, vkd, allocator, physical_device, device, surface, window);
+        errdefer vkd.destroySwapchainKHR(device, swapchain, allocation_callbacks);
+        vulkanLog("swapchain created", .{});
+
         return .{
             .vki = vki,
             .vkd = vkd,
@@ -130,24 +141,156 @@ pub const Ctx = struct {
             .device = device,
             .graphics_queue = graphics_queue,
             .present_queue = present_queue,
+            .swapchain = swapchain,
             .debug_messenger = debug_messenger,
         };
     }
 
     pub fn deinit(self: *Self) void {
+        self.vkd.destroySwapchainKHR(self.device, self.swapchain, allocation_callbacks);
+        vulkanLog("swapchain destroyed", .{});
+
         self.vkd.destroyDevice(self.device, allocation_callbacks);
         vulkanLog("device destroyed", .{});
 
         self.vki.destroySurfaceKHR(self.instance, self.surface, allocation_callbacks);
         vulkanLog("surface destroyed", .{});
 
-        deinitDebugCallback(self.instance, self.vki, self.debug_messenger);
-        vulkanLog("debug callback destroyed", .{});
+        deinitDebugMessenger(self.instance, self.vki, self.debug_messenger);
+        vulkanLog("debug messenger destroyed", .{});
 
         self.vki.destroyInstance(self.instance, allocation_callbacks);
         vulkanLog("instance destroyed", .{});
     }
 };
+
+fn createSwapchain(
+    vki: InstanceFunctions,
+    vkd: DeviceFunctions,
+    allocator: Allocator,
+    physical_device: PhysicalDevice,
+    device: vk.Device,
+    surface: vk.SurfaceKHR,
+    window: *c.GLFWwindow,
+) !vk.SwapchainKHR {
+    const surface_format = try pickSwapSurfaceFormat(vki, allocator, physical_device.handle, surface);
+    vulkanLog("selected surface format {s}", .{@tagName(surface_format.format)});
+    vulkanLog("selected surface color space {s}", .{@tagName(surface_format.color_space)});
+
+    const present_mode = try pickSwapPresentMode(vki, allocator, physical_device.handle, surface);
+    vulkanLog("selected present mode {s}", .{@tagName(present_mode)});
+
+    const surface_capabilities = try vki.getPhysicalDeviceSurfaceCapabilitiesKHR(physical_device.handle, surface);
+    const extent = try pickSwapExtent(surface_capabilities, window);
+    vulkanLog("selected extent {d}x{d}", .{ extent.width, extent.height });
+
+    var image_count = surface_capabilities.min_image_count + 1;
+    if (surface_capabilities.min_image_count > 0 and image_count > surface_capabilities.max_image_count) {
+        image_count = surface_capabilities.max_image_count;
+    }
+
+    const same_family = physical_device.graphics_family == physical_device.present_family;
+    const queue_family_indices = [_]u32{ physical_device.graphics_family, physical_device.present_family };
+    const swapchain_create_info = vk.SwapchainCreateInfoKHR{
+        .surface = surface,
+        .min_image_count = image_count,
+        .image_format = surface_format.format,
+        .image_color_space = surface_format.color_space,
+        .image_extent = extent,
+        .image_array_layers = 1,
+        .image_usage = .{ .color_attachment_bit = true },
+        .image_sharing_mode = if (same_family) .exclusive else .concurrent,
+        .queue_family_index_count = if (same_family) 0 else 2,
+        .p_queue_family_indices = if (same_family) null else &queue_family_indices,
+        .pre_transform = surface_capabilities.current_transform,
+        .composite_alpha = .{ .opaque_bit_khr = true },
+        .present_mode = present_mode,
+        .clipped = vk.TRUE,
+    };
+
+    return vkd.createSwapchainKHR(device, &swapchain_create_info, allocation_callbacks);
+}
+
+fn pickSwapSurfaceFormat(
+    vki: InstanceFunctions,
+    allocator: Allocator,
+    physical_device: vk.PhysicalDevice,
+    surface: vk.SurfaceKHR,
+) !vk.SurfaceFormatKHR {
+    var format_count: u32 = 0;
+    _ = try vki.getPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &format_count, null);
+
+    var surface_formats = try allocator.alloc(vk.SurfaceFormatKHR, format_count);
+    defer allocator.free(surface_formats);
+
+    _ = try vki.getPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &format_count, surface_formats.ptr);
+
+    for (surface_formats) |surface_format| {
+        if (surface_format.format == .b8g8r8a8_srgb and surface_format.color_space == .srgb_nonlinear_khr) {
+            return surface_format;
+        }
+    }
+
+    return surface_formats[0];
+}
+
+fn pickSwapPresentMode(
+    vki: InstanceFunctions,
+    allocator: Allocator,
+    physical_device: vk.PhysicalDevice,
+    surface: vk.SurfaceKHR,
+) !vk.PresentModeKHR {
+    var present_mode_count: u32 = 0;
+    _ = try vki.getPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &present_mode_count, null);
+
+    var present_modes = try allocator.alloc(vk.PresentModeKHR, present_mode_count);
+    defer allocator.free(present_modes);
+
+    _ = try vki.getPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &present_mode_count, present_modes.ptr);
+
+    for (present_modes) |present_mode| {
+        if (present_mode == .mailbox_khr) {
+            return present_mode;
+        }
+    }
+
+    return .fifo_khr; // This mode is guaranteed to be present
+}
+
+fn pickSwapExtent(
+    surface_capabilities: vk.SurfaceCapabilitiesKHR,
+    window: *c.GLFWwindow,
+) !vk.Extent2D {
+    if (surface_capabilities.current_extent.width != std.math.maxInt(u32)) {
+        return surface_capabilities.current_extent;
+    }
+
+    var width: i32 = 0;
+    var height: i32 = 0;
+    c.glfwGetFramebufferSize(window, &width, &height);
+
+    if (width != 0 or height != 0) {
+        return error.FailedToGetFramebufferSize;
+    }
+
+    var actual_extent = vk.Extent2D{
+        .width = @intCast(width),
+        .height = @intCast(height),
+    };
+
+    actual_extent.width = std.math.clamp(
+        actual_extent.width,
+        surface_capabilities.min_image_extent.width,
+        surface_capabilities.max_image_extent.width,
+    );
+    actual_extent.height = std.math.clamp(
+        actual_extent.height,
+        surface_capabilities.min_image_extent.height,
+        surface_capabilities.max_image_extent.width,
+    );
+
+    return actual_extent;
+}
 
 fn createLogicalDevice(vki: InstanceFunctions, allocator: Allocator, physical_device: PhysicalDevice) !vk.Device {
     var unique_queues_families = std.AutoHashMap(u32, void).init(allocator);
@@ -278,7 +421,7 @@ fn createDebugMessengerCreateInfo() vk.DebugUtilsMessengerCreateInfoEXT {
     };
 }
 
-fn initDebugCallback(instance: vk.Instance, vki: InstanceFunctions) !DebugMessenger {
+fn initDebugMessenger(instance: vk.Instance, vki: InstanceFunctions) !DebugMessenger {
     if (!enable_validation) return;
 
     const create_info = createDebugMessengerCreateInfo();
@@ -289,7 +432,7 @@ fn initDebugCallback(instance: vk.Instance, vki: InstanceFunctions) !DebugMessen
     );
 }
 
-fn deinitDebugCallback(instance: vk.Instance, vki: InstanceFunctions, debug_messenger: DebugMessenger) void {
+fn deinitDebugMessenger(instance: vk.Instance, vki: InstanceFunctions, debug_messenger: DebugMessenger) void {
     if (!enable_validation) return;
 
     vki.destroyDebugUtilsMessengerEXT(instance, debug_messenger, allocation_callbacks);
@@ -331,7 +474,12 @@ fn createWindowSurface(instance: vk.Instance, window: *c.GLFWwindow) !vk.Surface
     return surface;
 }
 
-fn pickPhysicalDevice(instance: vk.Instance, vki: InstanceFunctions, allocator: Allocator, surface: vk.SurfaceKHR) !PhysicalDevice {
+fn pickPhysicalDevice(
+    instance: vk.Instance,
+    vki: InstanceFunctions,
+    allocator: Allocator,
+    surface: vk.SurfaceKHR,
+) !PhysicalDevice {
     const physical_device_handles = try listSuitablePhysicalDevices(instance, vki, allocator, surface);
     defer allocator.free(physical_device_handles);
 
@@ -357,7 +505,12 @@ fn comparePhysicalDevices(_: void, a: PhysicalDevice, b: PhysicalDevice) bool {
     return true;
 }
 
-fn listSuitablePhysicalDevices(instance: vk.Instance, vki: InstanceFunctions, allocator: Allocator, surface: vk.SurfaceKHR) ![]vk.PhysicalDevice {
+fn listSuitablePhysicalDevices(
+    instance: vk.Instance,
+    vki: InstanceFunctions,
+    allocator: Allocator,
+    surface: vk.SurfaceKHR,
+) ![]vk.PhysicalDevice {
     var device_count: u32 = 0;
     _ = try vki.enumeratePhysicalDevices(instance, &device_count, null);
 
@@ -378,7 +531,12 @@ fn listSuitablePhysicalDevices(instance: vk.Instance, vki: InstanceFunctions, al
     return suitables.toOwnedSlice();
 }
 
-fn isDeviceSuitable(vki: InstanceFunctions, allocator: Allocator, physical_device: vk.PhysicalDevice, surface: vk.SurfaceKHR) !bool {
+fn isDeviceSuitable(
+    vki: InstanceFunctions,
+    allocator: Allocator,
+    physical_device: vk.PhysicalDevice,
+    surface: vk.SurfaceKHR,
+) !bool {
     if (!try checkDeviceExtensionSupport(vki, allocator, physical_device)) return false;
 
     const queue_families = try findQueueFamilies(vki, allocator, physical_device, surface);
@@ -388,17 +546,25 @@ fn isDeviceSuitable(vki: InstanceFunctions, allocator: Allocator, physical_devic
     return queue_families.isComplete() and swap_chain_support;
 }
 
-fn checkSwapChainSupport(vki: InstanceFunctions, physical_device: vk.PhysicalDevice, surface: vk.SurfaceKHR) !bool {
-    var format_count: u32 = undefined;
+fn checkSwapChainSupport(
+    vki: InstanceFunctions,
+    physical_device: vk.PhysicalDevice,
+    surface: vk.SurfaceKHR,
+) !bool {
+    var format_count: u32 = 0;
     _ = try vki.getPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &format_count, null);
 
-    var present_mode_count: u32 = undefined;
+    var present_mode_count: u32 = 0;
     _ = try vki.getPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &present_mode_count, null);
 
     return format_count > 0 and present_mode_count > 0;
 }
 
-fn checkDeviceExtensionSupport(vki: InstanceFunctions, allocator: Allocator, physical_device: vk.PhysicalDevice) !bool {
+fn checkDeviceExtensionSupport(
+    vki: InstanceFunctions,
+    allocator: Allocator,
+    physical_device: vk.PhysicalDevice,
+) !bool {
     var extension_count: u32 = 0;
     _ = try vki.enumerateDeviceExtensionProperties(physical_device, null, &extension_count, null);
 
@@ -423,7 +589,12 @@ fn checkDeviceExtensionSupport(vki: InstanceFunctions, allocator: Allocator, phy
     return true;
 }
 
-fn findQueueFamilies(vki: InstanceFunctions, allocator: Allocator, physical_device: vk.PhysicalDevice, surface: vk.SurfaceKHR) !QueueFamiliesIndices {
+fn findQueueFamilies(
+    vki: InstanceFunctions,
+    allocator: Allocator,
+    physical_device: vk.PhysicalDevice,
+    surface: vk.SurfaceKHR,
+) !QueueFamiliesIndices {
     var queue_families_indices = QueueFamiliesIndices{};
 
     var family_count: u32 = 0;
