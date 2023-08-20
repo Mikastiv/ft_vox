@@ -35,7 +35,12 @@ const InstanceFunctions = vk.InstanceWrapper(.{
     .destroyDebugUtilsMessengerEXT = enable_validation,
 });
 
-const QueueFamilies = struct {
+const DeviceFunctions = vk.DeviceWrapper(.{
+    .destroyDevice = true,
+    .getDeviceQueue = true,
+});
+
+const QueueFamiliesIndices = struct {
     const Self = @This();
 
     graphics_family: ?u32 = null,
@@ -73,12 +78,15 @@ pub const Ctx = struct {
     const Self = @This();
 
     vki: InstanceFunctions,
+    vkd: DeviceFunctions,
 
     allocator: std.mem.Allocator,
 
     instance: vk.Instance,
     surface: vk.SurfaceKHR,
     physical_device: PhysicalDevice,
+    device: vk.Device,
+    graphics_queue: vk.Queue,
 
     debug_messenger: DebugMessenger,
 
@@ -101,25 +109,66 @@ pub const Ctx = struct {
         const physical_device = try pickPhysicalDevice(instance, vki, allocator, surface);
         vulkanLog("selected physical device {s}", .{@as([*:0]const u8, @ptrCast(&physical_device.properties.device_name))});
 
+        const device = try createLogicalDevice(vki, physical_device);
+        const vkd = try DeviceFunctions.load(device, vki.dispatch.vkGetDeviceProcAddr);
+        errdefer vkd.destroyDevice(device, allocation_callbacks);
+        vulkanLog("device created", .{});
+
+        const graphics_queue = vkd.getDeviceQueue(device, physical_device.graphics_family, 0);
+        vulkanLog("graphics family index {d}", .{physical_device.graphics_family});
+
         return .{
             .vki = vki,
+            .vkd = vkd,
             .allocator = allocator,
             .instance = instance,
             .surface = surface,
             .physical_device = physical_device,
+            .device = device,
+            .graphics_queue = graphics_queue,
             .debug_messenger = debug_messenger,
         };
     }
 
     pub fn deinit(self: *Self) void {
+        self.vkd.destroyDevice(self.device, allocation_callbacks);
+        vulkanLog("device destroyed", .{});
+
         self.vki.destroySurfaceKHR(self.instance, self.surface, allocation_callbacks);
         vulkanLog("surface destroyed", .{});
+
         deinitDebugCallback(self.instance, self.vki, self.debug_messenger);
         vulkanLog("debug callback destroyed", .{});
+
         self.vki.destroyInstance(self.instance, allocation_callbacks);
         vulkanLog("instance destroyed", .{});
     }
 };
+
+fn createLogicalDevice(vki: InstanceFunctions, physical_device: PhysicalDevice) !vk.Device {
+    const queue_priority = [_]f32{1};
+    const queue_create_info = [_]vk.DeviceQueueCreateInfo{
+        .{
+            .queue_family_index = physical_device.graphics_family,
+            .queue_count = 1,
+            .p_queue_priorities = &queue_priority,
+        },
+    };
+
+    const physical_device_features = vk.PhysicalDeviceFeatures{};
+
+    const device_create_info = vk.DeviceCreateInfo{
+        .queue_create_info_count = queue_create_info.len,
+        .p_queue_create_infos = &queue_create_info,
+        .p_enabled_features = &physical_device_features,
+        .enabled_extension_count = required_device_extensions.len,
+        .pp_enabled_extension_names = @as([*]const [*:0]const u8, @ptrCast(&required_device_extensions)),
+        .enabled_layer_count = if (enable_validation) @as(u32, @intCast(validation_layers.len)) else 0,
+        .pp_enabled_layer_names = if (enable_validation) &validation_layers else null,
+    };
+
+    return vki.createDevice(physical_device.handle, &device_create_info, allocation_callbacks);
+}
 
 fn createInstance(vkb: BaseFunctions, allocator: Allocator, app_name: [*:0]const u8) !vk.Instance {
     if (enable_validation and !try checkValidationLayerSupport(vkb, allocator)) {
@@ -296,15 +345,15 @@ fn listSuitablePhysicalDevices(instance: vk.Instance, vki: InstanceFunctions, al
     var device_count: u32 = 0;
     _ = try vki.enumeratePhysicalDevices(instance, &device_count, null);
 
-    const devices = try allocator.alloc(vk.PhysicalDevice, device_count);
-    defer allocator.free(devices);
+    const physical_devices = try allocator.alloc(vk.PhysicalDevice, device_count);
+    defer allocator.free(physical_devices);
 
-    _ = try vki.enumeratePhysicalDevices(instance, &device_count, devices.ptr);
+    _ = try vki.enumeratePhysicalDevices(instance, &device_count, physical_devices.ptr);
 
     var suitables = std.ArrayList(vk.PhysicalDevice).init(allocator);
     errdefer suitables.deinit();
 
-    for (devices) |device| {
+    for (physical_devices) |device| {
         if (try isDeviceSuitable(vki, allocator, device, surface)) {
             try suitables.append(device);
         }
@@ -313,34 +362,34 @@ fn listSuitablePhysicalDevices(instance: vk.Instance, vki: InstanceFunctions, al
     return suitables.toOwnedSlice();
 }
 
-fn isDeviceSuitable(vki: InstanceFunctions, allocator: Allocator, device: vk.PhysicalDevice, surface: vk.SurfaceKHR) !bool {
-    if (!try checkDeviceExtensionSupport(vki, allocator, device)) return false;
+fn isDeviceSuitable(vki: InstanceFunctions, allocator: Allocator, physical_device: vk.PhysicalDevice, surface: vk.SurfaceKHR) !bool {
+    if (!try checkDeviceExtensionSupport(vki, allocator, physical_device)) return false;
 
-    const queue_families = try findQueueFamilies(vki, allocator, device, surface);
+    const queue_families = try findQueueFamilies(vki, allocator, physical_device, surface);
 
-    const swap_chain_support = try checkSwapChainSupport(vki, device, surface);
+    const swap_chain_support = try checkSwapChainSupport(vki, physical_device, surface);
 
     return queue_families.isComplete() and swap_chain_support;
 }
 
-fn checkSwapChainSupport(vki: InstanceFunctions, device: vk.PhysicalDevice, surface: vk.SurfaceKHR) !bool {
+fn checkSwapChainSupport(vki: InstanceFunctions, physical_device: vk.PhysicalDevice, surface: vk.SurfaceKHR) !bool {
     var format_count: u32 = undefined;
-    _ = try vki.getPhysicalDeviceSurfaceFormatsKHR(device, surface, &format_count, null);
+    _ = try vki.getPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &format_count, null);
 
     var present_mode_count: u32 = undefined;
-    _ = try vki.getPhysicalDeviceSurfacePresentModesKHR(device, surface, &present_mode_count, null);
+    _ = try vki.getPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &present_mode_count, null);
 
     return format_count > 0 and present_mode_count > 0;
 }
 
-fn checkDeviceExtensionSupport(vki: InstanceFunctions, allocator: Allocator, device: vk.PhysicalDevice) !bool {
+fn checkDeviceExtensionSupport(vki: InstanceFunctions, allocator: Allocator, physical_device: vk.PhysicalDevice) !bool {
     var extension_count: u32 = 0;
-    _ = try vki.enumerateDeviceExtensionProperties(device, null, &extension_count, null);
+    _ = try vki.enumerateDeviceExtensionProperties(physical_device, null, &extension_count, null);
 
     const extensions = try allocator.alloc(vk.ExtensionProperties, extension_count);
     defer allocator.free(extensions);
 
-    _ = try vki.enumerateDeviceExtensionProperties(device, null, &extension_count, extensions.ptr);
+    _ = try vki.enumerateDeviceExtensionProperties(physical_device, null, &extension_count, extensions.ptr);
 
     for (required_device_extensions) |extension_name| {
         var extension_found = false;
@@ -358,31 +407,31 @@ fn checkDeviceExtensionSupport(vki: InstanceFunctions, allocator: Allocator, dev
     return true;
 }
 
-fn findQueueFamilies(vki: InstanceFunctions, allocator: Allocator, device: vk.PhysicalDevice, surface: vk.SurfaceKHR) !QueueFamilies {
-    var queue_families = QueueFamilies{};
+fn findQueueFamilies(vki: InstanceFunctions, allocator: Allocator, physical_device: vk.PhysicalDevice, surface: vk.SurfaceKHR) !QueueFamiliesIndices {
+    var queue_families_indices = QueueFamiliesIndices{};
 
     var family_count: u32 = 0;
-    vki.getPhysicalDeviceQueueFamilyProperties(device, &family_count, null);
+    vki.getPhysicalDeviceQueueFamilyProperties(physical_device, &family_count, null);
 
     var families = try allocator.alloc(vk.QueueFamilyProperties, family_count);
     defer allocator.free(families);
 
-    vki.getPhysicalDeviceQueueFamilyProperties(device, &family_count, families.ptr);
+    vki.getPhysicalDeviceQueueFamilyProperties(physical_device, &family_count, families.ptr);
 
     for (families, 0..) |family, i| {
         const idx: u32 = @intCast(i);
 
-        if (queue_families.graphics_family == null and family.queue_count > 0 and family.queue_flags.graphics_bit) {
-            queue_families.graphics_family = idx;
+        if (queue_families_indices.graphics_family == null and family.queue_flags.graphics_bit) {
+            queue_families_indices.graphics_family = idx;
         }
 
-        const present_support = try vki.getPhysicalDeviceSurfaceSupportKHR(device, idx, surface) == vk.TRUE;
-        if (queue_families.present_family == null and present_support) {
-            queue_families.present_family = idx;
+        const present_support = try vki.getPhysicalDeviceSurfaceSupportKHR(physical_device, idx, surface) == vk.TRUE;
+        if (queue_families_indices.present_family == null and present_support) {
+            queue_families_indices.present_family = idx;
         }
 
-        if (queue_families.isComplete()) break;
+        if (queue_families_indices.isComplete()) break;
     }
 
-    return queue_families;
+    return queue_families_indices;
 }
