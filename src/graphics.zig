@@ -276,15 +276,17 @@ fn createGraphicsPipeline(
     fragment_shader: vk.ShaderModule,
 ) !void {
     _ = allocator;
-    const vert_shader_stage_info = vk.PipelineShaderStageInfo{
+    const vert_shader_stage_create_info = vk.PipelineShaderStageCreateInfo{
+        .stage = .{ .vertex_bit = true },
         .module = vertex_shader,
         .p_name = "main",
     };
-    const frag_shader_stage_info = vk.PipelineShaderStageInfo{
+    const frag_shader_stage_create_info = vk.PipelineShaderStageCreateInfo{
+        .stage = .{ .fragment_bit = true },
         .module = fragment_shader,
         .p_name = "main",
     };
-    const shader_stages = [_]vk.PipelineShaderStageInfo{ vert_shader_stage_info, frag_shader_stage_info };
+    const shader_stages = [_]vk.PipelineShaderStageCreateInfo{ vert_shader_stage_create_info, frag_shader_stage_create_info };
     _ = shader_stages;
 
     const dynamic_states = [_]vk.DynamicState{
@@ -293,7 +295,7 @@ fn createGraphicsPipeline(
     };
     const dynamic_state_create_info = vk.PipelineDynamicStateCreateInfo{
         .dynamic_state_count = dynamic_states.len,
-        .p_dynamic_states = dynamic_states.ptr,
+        .p_dynamic_states = &dynamic_states,
     };
     _ = dynamic_state_create_info;
 
@@ -314,8 +316,8 @@ fn createGraphicsPipeline(
     const viewports = [_]vk.Viewport{.{
         .x = 0,
         .y = 0,
-        .width = extent.width,
-        .height = extent.height,
+        .width = @floatFromInt(extent.width),
+        .height = @floatFromInt(extent.height),
         .min_depth = 0,
         .max_depth = 1,
     }};
@@ -327,9 +329,9 @@ fn createGraphicsPipeline(
 
     const viewport_state_create_info = vk.PipelineViewportStateCreateInfo{
         .viewport_count = viewports.len,
-        .p_viewports = viewports.ptr,
+        .p_viewports = &viewports,
         .scissor_count = scissors.len,
-        .p_scissors = scissors.ptr,
+        .p_scissors = &scissors,
     };
     _ = viewport_state_create_info;
 
@@ -348,7 +350,7 @@ fn createGraphicsPipeline(
     _ = rasterizer_create_info;
 
     const multisampling_create_info = vk.PipelineMultisampleStateCreateInfo{
-        .rasterization_samples = .@"1_bit",
+        .rasterization_samples = .{ .@"1_bit" = true },
         .sample_shading_enable = vk.FALSE,
         .min_sample_shading = 1,
         .alpha_to_coverage_enable = vk.FALSE,
@@ -363,6 +365,7 @@ fn createGraphicsPipeline(
         .color_blend_op = .add,
         .src_alpha_blend_factor = .one,
         .dst_alpha_blend_factor = .zero,
+        .alpha_blend_op = .add,
         .color_write_mask = .{ .r_bit = true, .g_bit = true, .b_bit = true, .a_bit = true },
     }};
 
@@ -370,7 +373,7 @@ fn createGraphicsPipeline(
         .logic_op_enable = vk.FALSE,
         .logic_op = .copy,
         .attachment_count = color_blend_attachment_states.len,
-        .p_attachments = color_blend_attachment_states.ptr,
+        .p_attachments = &color_blend_attachment_states,
         .blend_constants = .{ 0, 0, 0, 0 },
     };
     _ = color_blending_create_info;
