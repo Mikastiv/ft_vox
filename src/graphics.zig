@@ -44,6 +44,10 @@ const DeviceFunctions = vk.DeviceWrapper(.{
     .getSwapchainImagesKHR = true,
     .createImageView = true,
     .destroyImageView = true,
+    .createShaderModule = true,
+    .destroyShaderModule = true,
+    .createPipelineLayout = true,
+    .destroyPipelineLayout = true,
 });
 
 const QueueFamiliesIndices = struct {
@@ -170,6 +174,8 @@ pub const Ctx = struct {
     graphics_queue: vk.Queue,
     present_queue: vk.Queue,
     swapchain: Swapchain,
+    vertex_shader: vk.ShaderModule,
+    fragment_shader: vk.ShaderModule,
 
     debug_messenger: DebugMessenger,
 
@@ -210,6 +216,16 @@ pub const Ctx = struct {
         vulkanLog("selected present mode {s}", .{@tagName(swapchain.present_mode)});
         vulkanLog("selected extent {d}x{d}", .{ swapchain.extent.width, swapchain.extent.height });
 
+        const vertex_shader = try createShaderModule(vkd, allocator, device, "vert.spv");
+        errdefer vkd.destroyShaderModule(device, vertex_shader, allocation_callbacks);
+        vulkanLog("loaded vertex shader", .{});
+
+        const fragment_shader = try createShaderModule(vkd, allocator, device, "frag.spv");
+        errdefer vkd.destroyShaderModule(device, fragment_shader, allocation_callbacks);
+        vulkanLog("loaded fragment shader", .{});
+
+        try createGraphicsPipeline(vkd, allocator, device, swapchain.extent, vertex_shader, fragment_shader);
+
         return .{
             .vki = vki,
             .vkd = vkd,
@@ -221,11 +237,19 @@ pub const Ctx = struct {
             .graphics_queue = graphics_queue,
             .present_queue = present_queue,
             .swapchain = swapchain,
+            .vertex_shader = vertex_shader,
+            .fragment_shader = fragment_shader,
             .debug_messenger = debug_messenger,
         };
     }
 
     pub fn deinit(self: *Self) void {
+        self.vkd.destroyShaderModule(self.device, self.fragment_shader, allocation_callbacks);
+        vulkanLog("fragment shader destroyed", .{});
+
+        self.vkd.destroyShaderModule(self.device, self.vertex_shader, allocation_callbacks);
+        vulkanLog("vertex shader destroyed", .{});
+
         self.swapchain.deinit();
         vulkanLog("swapchain destroyed", .{});
 
@@ -242,6 +266,125 @@ pub const Ctx = struct {
         vulkanLog("instance destroyed", .{});
     }
 };
+
+fn createGraphicsPipeline(
+    vkd: DeviceFunctions,
+    allocator: Allocator,
+    device: vk.Device,
+    extent: vk.Extent2D,
+    vertex_shader: vk.ShaderModule,
+    fragment_shader: vk.ShaderModule,
+) !void {
+    _ = allocator;
+    const vert_shader_stage_info = vk.PipelineShaderStageInfo{
+        .module = vertex_shader,
+        .p_name = "main",
+    };
+    const frag_shader_stage_info = vk.PipelineShaderStageInfo{
+        .module = fragment_shader,
+        .p_name = "main",
+    };
+    const shader_stages = [_]vk.PipelineShaderStageInfo{ vert_shader_stage_info, frag_shader_stage_info };
+    _ = shader_stages;
+
+    const dynamic_states = [_]vk.DynamicState{
+        .viewport,
+        .scissor,
+    };
+    const dynamic_state_create_info = vk.PipelineDynamicStateCreateInfo{
+        .dynamic_state_count = dynamic_states.len,
+        .p_dynamic_states = dynamic_states.ptr,
+    };
+    _ = dynamic_state_create_info;
+
+    const vertex_input_create_info = vk.PipelineVertexInputStateCreateInfo{
+        .vertex_binding_description_count = 0,
+        .p_vertex_binding_descriptions = null,
+        .vertex_attribute_description_count = 0,
+        .p_vertex_attribute_descriptions = null,
+    };
+    _ = vertex_input_create_info;
+
+    const input_assembly_create_info = vk.PipelineInputAssemblyStateCreateInfo{
+        .topology = .triangle_list,
+        .primitive_restart_enable = vk.FALSE,
+    };
+    _ = input_assembly_create_info;
+
+    const viewports = [_]vk.Viewport{.{
+        .x = 0,
+        .y = 0,
+        .width = extent.width,
+        .height = extent.height,
+        .min_depth = 0,
+        .max_depth = 1,
+    }};
+
+    const scissors = [_]vk.Rect2D{.{
+        .offset = .{ .x = 0, .y = 0 },
+        .extent = extent,
+    }};
+
+    const viewport_state_create_info = vk.PipelineViewportStateCreateInfo{
+        .viewport_count = viewports.len,
+        .p_viewports = viewports.ptr,
+        .scissor_count = scissors.len,
+        .p_scissors = scissors.ptr,
+    };
+    _ = viewport_state_create_info;
+
+    const rasterizer_create_info = vk.PipelineRasterizationStateCreateInfo{
+        .depth_clamp_enable = vk.FALSE,
+        .rasterizer_discard_enable = vk.FALSE,
+        .polygon_mode = .fill,
+        .line_width = 1,
+        .cull_mode = .{ .back_bit = true },
+        .front_face = .clockwise,
+        .depth_bias_enable = vk.FALSE,
+        .depth_bias_constant_factor = 0,
+        .depth_bias_clamp = 0,
+        .depth_bias_slope_factor = 0,
+    };
+    _ = rasterizer_create_info;
+
+    const multisampling_create_info = vk.PipelineMultisampleStateCreateInfo{
+        .rasterization_samples = .@"1_bit",
+        .sample_shading_enable = vk.FALSE,
+        .min_sample_shading = 1,
+        .alpha_to_coverage_enable = vk.FALSE,
+        .alpha_to_one_enable = vk.FALSE,
+    };
+    _ = multisampling_create_info;
+
+    const color_blend_attachment_states = [_]vk.PipelineColorBlendAttachmentState{.{
+        .blend_enable = vk.FALSE,
+        .src_color_blend_factor = .one,
+        .dst_color_blend_factor = .zero,
+        .color_blend_op = .add,
+        .src_alpha_blend_factor = .one,
+        .dst_alpha_blend_factor = .zero,
+        .color_write_mask = .{ .r_bit = true, .g_bit = true, .b_bit = true, .a_bit = true },
+    }};
+
+    const color_blending_create_info = vk.PipelineColorBlendStateCreateInfo{
+        .logic_op_enable = vk.FALSE,
+        .logic_op = .copy,
+        .attachment_count = color_blend_attachment_states.len,
+        .p_attachments = color_blend_attachment_states.ptr,
+        .blend_constants = .{ 0, 0, 0, 0 },
+    };
+    _ = color_blending_create_info;
+
+    const pipeline_layout_create_info = vk.PipelineLayoutCreateInfo{
+        .set_layout_count = 0,
+        .p_set_layouts = null,
+        .push_constant_range_count = 0,
+        .p_push_constant_ranges = null,
+    };
+
+    const pipeline_layout = try vkd.createPipelineLayout(device, &pipeline_layout_create_info, allocation_callbacks);
+    errdefer vkd.destroyPipelineLayout(device, pipeline_layout, allocation_callbacks);
+}
 
 fn createImageViews(
     vkd: DeviceFunctions,
@@ -744,4 +887,33 @@ fn findQueueFamilies(
     }
 
     return queue_families_indices;
+}
+
+fn loadShaderByteCode(allocator: Allocator, comptime file: []const u8) ![]align(4) const u8 {
+    const shader_dir = "shaders/";
+    const shader = try std.fs.cwd().openFile(shader_dir ++ file, .{});
+
+    const size = try shader.getEndPos();
+    if (!std.mem.isAligned(size, 4)) {
+        return error.WrongShaderByteCodeAlignement;
+    }
+
+    var byte_code = try allocator.alignedAlloc(u8, 4, size);
+    errdefer allocator.free(byte_code);
+
+    _ = try shader.readAll(byte_code);
+
+    return byte_code;
+}
+
+fn createShaderModule(vkd: DeviceFunctions, allocator: Allocator, device: vk.Device, comptime file: []const u8) !vk.ShaderModule {
+    const byte_code = try loadShaderByteCode(allocator, file);
+    defer allocator.free(byte_code);
+
+    const create_info = vk.ShaderModuleCreateInfo{
+        .code_size = byte_code.len,
+        .p_code = std.mem.bytesAsSlice(u32, byte_code).ptr,
+    };
+
+    return vkd.createShaderModule(device, &create_info, allocation_callbacks);
 }
