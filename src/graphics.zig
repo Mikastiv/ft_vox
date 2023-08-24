@@ -770,7 +770,24 @@ fn comparePhysicalDevices(_: void, a: PhysicalDevice, b: PhysicalDevice) bool {
         return a_is_discrete;
     }
 
+    const a_local_vram = getLocalMemorySize(&a);
+    const b_local_vram = getLocalMemorySize(&b);
+    if (a_local_vram != b_local_vram) {
+        return a_local_vram > b_local_vram;
+    }
+
     return true;
+}
+
+fn getLocalMemorySize(physical_device: *const PhysicalDevice) vk.DeviceSize {
+    const count = physical_device.memory_properties.memory_heap_count;
+    for (physical_device.memory_properties.memory_heaps[0..count]) |heap| {
+        if (heap.flags.device_local_bit) {
+            return heap.size;
+        }
+    } else {
+        return 0;
+    }
 }
 
 fn listSuitablePhysicalDevices(
