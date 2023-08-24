@@ -46,8 +46,12 @@ const DeviceFunctions = vk.DeviceWrapper(.{
     .destroyImageView = true,
     .createShaderModule = true,
     .destroyShaderModule = true,
+    .createRenderPass = true,
+    .destroyRenderPass = true,
     .createPipelineLayout = true,
     .destroyPipelineLayout = true,
+    .createGraphicsPipelines = true,
+    .destroyPipeline = true,
 });
 
 const QueueFamiliesIndices = struct {
@@ -159,6 +163,178 @@ const Swapchain = struct {
     }
 };
 
+const GraphicsPipeline = struct {
+    const Self = @This();
+
+    vkd: DeviceFunctions,
+    device: vk.Device,
+
+    handle: vk.Pipeline,
+    layout: vk.PipelineLayout,
+
+    fn init(
+        vkd: DeviceFunctions,
+        device: vk.Device,
+        extent: vk.Extent2D,
+        vertex_shader: vk.ShaderModule,
+        fragment_shader: vk.ShaderModule,
+        render_pass: vk.RenderPass,
+    ) !Self {
+        const vert_shader_stage_create_info = vk.PipelineShaderStageCreateInfo{
+            .stage = .{ .vertex_bit = true },
+            .module = vertex_shader,
+            .p_name = "main",
+        };
+        const frag_shader_stage_create_info = vk.PipelineShaderStageCreateInfo{
+            .stage = .{ .fragment_bit = true },
+            .module = fragment_shader,
+            .p_name = "main",
+        };
+        const shader_stages = [_]vk.PipelineShaderStageCreateInfo{ vert_shader_stage_create_info, frag_shader_stage_create_info };
+
+        const dynamic_states = [_]vk.DynamicState{
+            .viewport,
+            .scissor,
+        };
+        const dynamic_state_create_info = vk.PipelineDynamicStateCreateInfo{
+            .dynamic_state_count = dynamic_states.len,
+            .p_dynamic_states = &dynamic_states,
+        };
+
+        const vertex_input_create_info = vk.PipelineVertexInputStateCreateInfo{
+            .vertex_binding_description_count = 0,
+            .p_vertex_binding_descriptions = null,
+            .vertex_attribute_description_count = 0,
+            .p_vertex_attribute_descriptions = null,
+        };
+
+        const input_assembly_create_info = vk.PipelineInputAssemblyStateCreateInfo{
+            .topology = .triangle_list,
+            .primitive_restart_enable = vk.FALSE,
+        };
+
+        const viewports = [_]vk.Viewport{
+            .{
+                .x = 0,
+                .y = 0,
+                .width = @floatFromInt(extent.width),
+                .height = @floatFromInt(extent.height),
+                .min_depth = 0,
+                .max_depth = 1,
+            },
+        };
+
+        const scissors = [_]vk.Rect2D{
+            .{
+                .offset = .{ .x = 0, .y = 0 },
+                .extent = extent,
+            },
+        };
+
+        const viewport_state_create_info = vk.PipelineViewportStateCreateInfo{
+            .viewport_count = viewports.len,
+            .p_viewports = &viewports,
+            .scissor_count = scissors.len,
+            .p_scissors = &scissors,
+        };
+
+        const rasterizer_create_info = vk.PipelineRasterizationStateCreateInfo{
+            .depth_clamp_enable = vk.FALSE,
+            .rasterizer_discard_enable = vk.FALSE,
+            .polygon_mode = .fill,
+            .line_width = 1,
+            .cull_mode = .{ .back_bit = true },
+            .front_face = .clockwise,
+            .depth_bias_enable = vk.FALSE,
+            .depth_bias_constant_factor = 0,
+            .depth_bias_clamp = 0,
+            .depth_bias_slope_factor = 0,
+        };
+
+        const multisampling_create_info = vk.PipelineMultisampleStateCreateInfo{
+            .rasterization_samples = .{ .@"1_bit" = true },
+            .sample_shading_enable = vk.FALSE,
+            .min_sample_shading = 1,
+            .alpha_to_coverage_enable = vk.FALSE,
+            .alpha_to_one_enable = vk.FALSE,
+        };
+
+        const color_blend_attachment_states = [_]vk.PipelineColorBlendAttachmentState{
+            .{
+                .blend_enable = vk.FALSE,
+                .src_color_blend_factor = .one,
+                .dst_color_blend_factor = .zero,
+                .color_blend_op = .add,
+                .src_alpha_blend_factor = .one,
+                .dst_alpha_blend_factor = .zero,
+                .alpha_blend_op = .add,
+                .color_write_mask = .{ .r_bit = true, .g_bit = true, .b_bit = true, .a_bit = true },
+            },
+        };
+
+        const color_blending_create_info = vk.PipelineColorBlendStateCreateInfo{
+            .logic_op_enable = vk.FALSE,
+            .logic_op = .copy,
+            .attachment_count = color_blend_attachment_states.len,
+            .p_attachments = &color_blend_attachment_states,
+            .blend_constants = .{ 0, 0, 0, 0 },
+        };
+
+        const pipeline_layout_create_info = vk.PipelineLayoutCreateInfo{
+            .set_layout_count = 0,
+            .p_set_layouts = null,
+            .push_constant_range_count = 0,
+            .p_push_constant_ranges = null,
+        };
+
+        const pipeline_layout = try vkd.createPipelineLayout(device, &pipeline_layout_create_info, allocation_callbacks);
+        errdefer vkd.destroyPipelineLayout(device, pipeline_layout, allocation_callbacks);
+
+        const pipeline_create_infos = [_]vk.GraphicsPipelineCreateInfo{
+            .{
+                .stage_count = shader_stages.len,
+                .p_stages = &shader_stages,
+                .p_vertex_input_state = &vertex_input_create_info,
+                .p_input_assembly_state = &input_assembly_create_info,
+                .p_viewport_state = &viewport_state_create_info,
+                .p_rasterization_state = &rasterizer_create_info,
+                .p_multisample_state = &multisampling_create_info,
+                .p_depth_stencil_state = null,
+                .p_color_blend_state = &color_blending_create_info,
+                .p_dynamic_state = &dynamic_state_create_info,
+                .layout = pipeline_layout,
+                .render_pass = render_pass,
+                .subpass = 0,
+                .base_pipeline_handle = .null_handle,
+                .base_pipeline_index = -1,
+            },
+        };
+
+        var graphics_pipelines: [pipeline_create_infos.len]vk.Pipeline = undefined;
+        _ = try vkd.createGraphicsPipelines(
+            device,
+            .null_handle,
+            pipeline_create_infos.len,
+            &pipeline_create_infos,
+            allocation_callbacks,
+            &graphics_pipelines,
+        );
+        errdefer vkd.destroyPipeline(device, graphics_pipelines[0]);
+
+        return .{
+            .vkd = vkd,
+            .device = device,
+            .handle = graphics_pipelines[0],
+            .layout = pipeline_layout,
+        };
+    }
+
+    fn deinit(self: *Self) void {
+        self.vkd.destroyPipeline(self.device, self.handle, allocation_callbacks);
+        self.vkd.destroyPipelineLayout(self.device, self.layout, allocation_callbacks);
+    }
+};
+
 pub const Ctx = struct {
     const Self = @This();
 
@@ -176,6 +352,8 @@ pub const Ctx = struct {
     swapchain: Swapchain,
     vertex_shader: vk.ShaderModule,
     fragment_shader: vk.ShaderModule,
+    render_pass: vk.RenderPass,
+    graphics_pipeline: GraphicsPipeline,
 
     debug_messenger: DebugMessenger,
 
@@ -224,7 +402,20 @@ pub const Ctx = struct {
         errdefer vkd.destroyShaderModule(device, fragment_shader, allocation_callbacks);
         vulkanLog("loaded fragment shader", .{});
 
-        try createGraphicsPipeline(vkd, allocator, device, swapchain.extent, vertex_shader, fragment_shader);
+        const render_pass = try createRenderPass(vkd, device, swapchain.image_format);
+        errdefer vkd.destroyRenderPass(device, render_pass, allocation_callbacks);
+        vulkanLog("render pass created", .{});
+
+        var graphics_pipeline = try GraphicsPipeline.init(
+            vkd,
+            device,
+            swapchain.extent,
+            vertex_shader,
+            fragment_shader,
+            render_pass,
+        );
+        errdefer graphics_pipeline.deinit();
+        vulkanLog("graphics pipeline created", .{});
 
         return .{
             .vki = vki,
@@ -239,11 +430,19 @@ pub const Ctx = struct {
             .swapchain = swapchain,
             .vertex_shader = vertex_shader,
             .fragment_shader = fragment_shader,
+            .render_pass = render_pass,
+            .graphics_pipeline = graphics_pipeline,
             .debug_messenger = debug_messenger,
         };
     }
 
     pub fn deinit(self: *Self) void {
+        self.graphics_pipeline.deinit();
+        vulkanLog("graphics pipeline destroyed", .{});
+
+        self.vkd.destroyRenderPass(self.device, self.render_pass, allocation_callbacks);
+        vulkanLog("render pass destroyed", .{});
+
         self.vkd.destroyShaderModule(self.device, self.fragment_shader, allocation_callbacks);
         vulkanLog("fragment shader destroyed", .{});
 
@@ -267,126 +466,43 @@ pub const Ctx = struct {
     }
 };
 
-fn createGraphicsPipeline(
-    vkd: DeviceFunctions,
-    allocator: Allocator,
-    device: vk.Device,
-    extent: vk.Extent2D,
-    vertex_shader: vk.ShaderModule,
-    fragment_shader: vk.ShaderModule,
-) !void {
-    _ = allocator;
-    const vert_shader_stage_create_info = vk.PipelineShaderStageCreateInfo{
-        .stage = .{ .vertex_bit = true },
-        .module = vertex_shader,
-        .p_name = "main",
-    };
-    const frag_shader_stage_create_info = vk.PipelineShaderStageCreateInfo{
-        .stage = .{ .fragment_bit = true },
-        .module = fragment_shader,
-        .p_name = "main",
-    };
-    const shader_stages = [_]vk.PipelineShaderStageCreateInfo{ vert_shader_stage_create_info, frag_shader_stage_create_info };
-    _ = shader_stages;
-
-    const dynamic_states = [_]vk.DynamicState{
-        .viewport,
-        .scissor,
-    };
-    const dynamic_state_create_info = vk.PipelineDynamicStateCreateInfo{
-        .dynamic_state_count = dynamic_states.len,
-        .p_dynamic_states = &dynamic_states,
-    };
-    _ = dynamic_state_create_info;
-
-    const vertex_input_create_info = vk.PipelineVertexInputStateCreateInfo{
-        .vertex_binding_description_count = 0,
-        .p_vertex_binding_descriptions = null,
-        .vertex_attribute_description_count = 0,
-        .p_vertex_attribute_descriptions = null,
-    };
-    _ = vertex_input_create_info;
-
-    const input_assembly_create_info = vk.PipelineInputAssemblyStateCreateInfo{
-        .topology = .triangle_list,
-        .primitive_restart_enable = vk.FALSE,
-    };
-    _ = input_assembly_create_info;
-
-    const viewports = [_]vk.Viewport{.{
-        .x = 0,
-        .y = 0,
-        .width = @floatFromInt(extent.width),
-        .height = @floatFromInt(extent.height),
-        .min_depth = 0,
-        .max_depth = 1,
-    }};
-
-    const scissors = [_]vk.Rect2D{.{
-        .offset = .{ .x = 0, .y = 0 },
-        .extent = extent,
-    }};
-
-    const viewport_state_create_info = vk.PipelineViewportStateCreateInfo{
-        .viewport_count = viewports.len,
-        .p_viewports = &viewports,
-        .scissor_count = scissors.len,
-        .p_scissors = &scissors,
-    };
-    _ = viewport_state_create_info;
-
-    const rasterizer_create_info = vk.PipelineRasterizationStateCreateInfo{
-        .depth_clamp_enable = vk.FALSE,
-        .rasterizer_discard_enable = vk.FALSE,
-        .polygon_mode = .fill,
-        .line_width = 1,
-        .cull_mode = .{ .back_bit = true },
-        .front_face = .clockwise,
-        .depth_bias_enable = vk.FALSE,
-        .depth_bias_constant_factor = 0,
-        .depth_bias_clamp = 0,
-        .depth_bias_slope_factor = 0,
-    };
-    _ = rasterizer_create_info;
-
-    const multisampling_create_info = vk.PipelineMultisampleStateCreateInfo{
-        .rasterization_samples = .{ .@"1_bit" = true },
-        .sample_shading_enable = vk.FALSE,
-        .min_sample_shading = 1,
-        .alpha_to_coverage_enable = vk.FALSE,
-        .alpha_to_one_enable = vk.FALSE,
-    };
-    _ = multisampling_create_info;
-
-    const color_blend_attachment_states = [_]vk.PipelineColorBlendAttachmentState{.{
-        .blend_enable = vk.FALSE,
-        .src_color_blend_factor = .one,
-        .dst_color_blend_factor = .zero,
-        .color_blend_op = .add,
-        .src_alpha_blend_factor = .one,
-        .dst_alpha_blend_factor = .zero,
-        .alpha_blend_op = .add,
-        .color_write_mask = .{ .r_bit = true, .g_bit = true, .b_bit = true, .a_bit = true },
-    }};
-
-    const color_blending_create_info = vk.PipelineColorBlendStateCreateInfo{
-        .logic_op_enable = vk.FALSE,
-        .logic_op = .copy,
-        .attachment_count = color_blend_attachment_states.len,
-        .p_attachments = &color_blend_attachment_states,
-        .blend_constants = .{ 0, 0, 0, 0 },
-    };
-    _ = color_blending_create_info;
-
-    const pipeline_layout_create_info = vk.PipelineLayoutCreateInfo{
-        .set_layout_count = 0,
-        .p_set_layouts = null,
-        .push_constant_range_count = 0,
-        .p_push_constant_ranges = null,
+fn createRenderPass(vkd: DeviceFunctions, device: vk.Device, format: vk.Format) !vk.RenderPass {
+    const color_attachments = [_]vk.AttachmentDescription{
+        .{
+            .format = format,
+            .samples = .{ .@"1_bit" = true },
+            .load_op = .clear,
+            .store_op = .store,
+            .stencil_load_op = .dont_care,
+            .stencil_store_op = .dont_care,
+            .initial_layout = .undefined,
+            .final_layout = .present_src_khr,
+        },
     };
 
-    const pipeline_layout = try vkd.createPipelineLayout(device, &pipeline_layout_create_info, allocation_callbacks);
-    errdefer vkd.destroyPipelineLayout(device, pipeline_layout, allocation_callbacks);
+    const color_attachment_refs = [_]vk.AttachmentReference{
+        .{
+            .attachment = 0,
+            .layout = .color_attachment_optimal,
+        },
+    };
+
+    const subpasses = [_]vk.SubpassDescription{
+        .{
+            .pipeline_bind_point = .graphics,
+            .color_attachment_count = color_attachment_refs.len,
+            .p_color_attachments = &color_attachment_refs,
+        },
+    };
+
+    const render_pass_create_info = vk.RenderPassCreateInfo{
+        .attachment_count = color_attachments.len,
+        .p_attachments = &color_attachments,
+        .subpass_count = subpasses.len,
+        .p_subpasses = &subpasses,
+    };
+
+    return vkd.createRenderPass(device, &render_pass_create_info, allocation_callbacks);
 }
 
 fn createImageViews(
