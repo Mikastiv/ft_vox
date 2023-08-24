@@ -54,6 +54,17 @@ const DeviceFunctions = vk.DeviceWrapper(.{
     .destroyPipeline = true,
     .createFramebuffer = true,
     .destroyFramebuffer = true,
+    .createCommandPool = true,
+    .destroyCommandPool = true,
+    .allocateCommandBuffers = true,
+    .beginCommandBuffer = true,
+    .endCommandBuffer = true,
+    .cmdBeginRenderPass = true,
+    .cmdEndRenderPass = true,
+    .cmdBindPipeline = true,
+    .cmdSetViewport = true,
+    .cmdSetScissor = true,
+    .cmdDraw = true,
 });
 
 const QueueFamiliesIndices = struct {
@@ -177,7 +188,6 @@ const GraphicsPipeline = struct {
     fn init(
         vkd: DeviceFunctions,
         device: vk.Device,
-        extent: vk.Extent2D,
         vertex_shader: vk.ShaderModule,
         fragment_shader: vk.ShaderModule,
         render_pass: vk.RenderPass,
@@ -215,29 +225,9 @@ const GraphicsPipeline = struct {
             .primitive_restart_enable = vk.FALSE,
         };
 
-        const viewports = [_]vk.Viewport{
-            .{
-                .x = 0,
-                .y = 0,
-                .width = @floatFromInt(extent.width),
-                .height = @floatFromInt(extent.height),
-                .min_depth = 0,
-                .max_depth = 1,
-            },
-        };
-
-        const scissors = [_]vk.Rect2D{
-            .{
-                .offset = .{ .x = 0, .y = 0 },
-                .extent = extent,
-            },
-        };
-
         const viewport_state_create_info = vk.PipelineViewportStateCreateInfo{
-            .viewport_count = viewports.len,
-            .p_viewports = &viewports,
-            .scissor_count = scissors.len,
-            .p_scissors = &scissors,
+            .viewport_count = 1,
+            .scissor_count = 1,
         };
 
         const rasterizer_create_info = vk.PipelineRasterizationStateCreateInfo{
@@ -406,6 +396,8 @@ pub const Ctx = struct {
     render_pass: vk.RenderPass,
     graphics_pipeline: GraphicsPipeline,
     framebuffers: Framebuffers,
+    command_pool: vk.CommandPool,
+    command_buffer: vk.CommandBuffer,
 
     debug_messenger: DebugMessenger,
 
@@ -461,7 +453,6 @@ pub const Ctx = struct {
         var graphics_pipeline = try GraphicsPipeline.init(
             vkd,
             device,
-            swapchain.extent,
             vertex_shader,
             fragment_shader,
             render_pass,
@@ -472,6 +463,13 @@ pub const Ctx = struct {
         var framebuffers = try Framebuffers.init(vkd, allocator, device, &swapchain, render_pass);
         errdefer framebuffers.deinit();
         vulkanLog("framebuffers created", .{});
+
+        const command_pool = try createCommandPool(vkd, device, physical_device.graphics_family);
+        errdefer vkd.destroyCommandPool(device, command_pool, allocation_callbacks);
+        vulkanLog("command pool created", .{});
+
+        const command_buffer = try createCommandBuffer(vkd, device, command_pool);
+        vulkanLog("command buffer created", .{});
 
         return .{
             .vki = vki,
@@ -489,11 +487,16 @@ pub const Ctx = struct {
             .render_pass = render_pass,
             .graphics_pipeline = graphics_pipeline,
             .framebuffers = framebuffers,
+            .command_pool = command_pool,
+            .command_buffer = command_buffer,
             .debug_messenger = debug_messenger,
         };
     }
 
     pub fn deinit(self: *Self) void {
+        self.vkd.destroyCommandPool(self.device, self.command_pool, allocation_callbacks);
+        vulkanLog("command pool destroyed", .{});
+
         self.framebuffers.deinit();
         vulkanLog("framebuffers destroyed", .{});
 
@@ -525,6 +528,82 @@ pub const Ctx = struct {
         vulkanLog("instance destroyed", .{});
     }
 };
+
+fn recordCommandBuffer(
+    vkd: DeviceFunctions,
+    command_buffer: vk.CommandBuffer,
+    render_pass: vk.RenderPass,
+    framebuffer: vk.Framebuffer,
+    extent: vk.Extent2D,
+) !void {
+    const begin_info = vk.CommandBufferBeginInfo{
+        .flags = .{},
+        .p_inheritance_info = null,
+    };
+
+    try vkd.beginCommandBuffer(command_buffer, &begin_info);
+
+    const clear_colors = [_]vk.ClearValue{
+        .{ 0, 0, 0, 1 },
+    };
+    const render_pass_begin_info = vk.RenderPassBeginInfo{
+        .render_pass = render_pass,
+        .framebuffer = framebuffer,
+        .render_area = .{
+            .offset = .{ 0, 0 },
+            .extent = extent,
+        },
+        .clear_value_count = clear_colors.len,
+        .p_clear_values = &clear_colors,
+    };
+
+    vkd.cmdBeginRenderPass(command_buffer, &render_pass_begin_info, .@"inline");
+
+    const viewports = [_]vk.Viewport{
+        .{
+            .x = 0,
+            .y = 0,
+            .width = @floatFromInt(extent.width),
+            .height = @floatFromInt(extent.height),
+            .min_depth = 0,
+            .max_depth = 1,
+        },
+    };
+    vkd.cmdSetViewport(command_buffer, 0, viewports.len, &viewports);
+
+    const scissors = [_]vk.Rect2D{
+        .{
+            .offset = .{ .x = 0, .y = 0 },
+            .extent = extent,
+        },
+    };
+    vkd.cmdSetScissor(command_buffer, 0, scissors.len, &scissors);
+
+    vkd.cmdDraw(command_buffer, 3, 1, 0, 0);
+    vkd.cmdEndRenderPass(command_buffer);
+
+    try vkd.endCommandBuffer(command_buffer);
+}
+
+fn createCommandBuffer(vkd: DeviceFunctions, device: vk.Device, command_pool: vk.CommandPool) !vk.CommandBuffer {
+    const command_buffer_create_info = vk.CommandBufferAllocateInfo{
+        .command_pool = command_pool,
+        .level = .primary,
+        .command_buffer_count = 1,
+    };
+
+    var command_buffers = [_]vk.CommandBuffer{.null_handle} ** 1;
+    try vkd.allocateCommandBuffers(device, &command_buffer_create_info, &command_buffers);
+    return command_buffers[0];
+}
+
+fn createCommandPool(vkd: DeviceFunctions, device: vk.Device, queue_family: u32) !vk.CommandPool {
+    const command_pool_create_info = vk.CommandPoolCreateInfo{
+        .flags = .{ .reset_command_buffer_bit = true },
+        .queue_family_index = queue_family,
+    };
+    return vkd.createCommandPool(device, &command_pool_create_info, allocation_callbacks);
+}
 
 fn createRenderPass(vkd: DeviceFunctions, device: vk.Device, format: vk.Format) !vk.RenderPass {
     const color_attachments = [_]vk.AttachmentDescription{
