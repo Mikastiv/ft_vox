@@ -52,6 +52,8 @@ const DeviceFunctions = vk.DeviceWrapper(.{
     .destroyPipelineLayout = true,
     .createGraphicsPipelines = true,
     .destroyPipeline = true,
+    .createFramebuffer = true,
+    .destroyFramebuffer = true,
 });
 
 const QueueFamiliesIndices = struct {
@@ -310,7 +312,7 @@ const GraphicsPipeline = struct {
             },
         };
 
-        var graphics_pipelines: [pipeline_create_infos.len]vk.Pipeline = undefined;
+        var graphics_pipelines = [_]vk.Pipeline{.null_handle} ** pipeline_create_infos.len;
         _ = try vkd.createGraphicsPipelines(
             device,
             .null_handle,
@@ -335,6 +337,55 @@ const GraphicsPipeline = struct {
     }
 };
 
+const Framebuffers = struct {
+    const Self = @This();
+
+    vkd: DeviceFunctions,
+    allocator: Allocator,
+    device: vk.Device,
+
+    handles: []vk.Framebuffer,
+
+    fn init(
+        vkd: DeviceFunctions,
+        allocator: Allocator,
+        device: vk.Device,
+        swapchain: *const Swapchain,
+        render_pass: vk.RenderPass,
+    ) !Self {
+        const framebuffers = try allocator.alloc(vk.Framebuffer, swapchain.image_views.len);
+        errdefer allocator.free(framebuffers);
+
+        for (swapchain.image_views, 0..) |image_view, i| {
+            const attachments = [_]vk.ImageView{image_view};
+            const framebuffer_create_info = vk.FramebufferCreateInfo{
+                .render_pass = render_pass,
+                .attachment_count = attachments.len,
+                .p_attachments = &attachments,
+                .width = swapchain.extent.width,
+                .height = swapchain.extent.height,
+                .layers = 1,
+            };
+            framebuffers[i] = try vkd.createFramebuffer(device, &framebuffer_create_info, allocation_callbacks);
+            errdefer vkd.destroyFramebuffer(device, framebuffers[i], allocation_callbacks);
+        }
+
+        return .{
+            .vkd = vkd,
+            .allocator = allocator,
+            .device = device,
+            .handles = framebuffers,
+        };
+    }
+
+    fn deinit(self: *Self) void {
+        for (self.handles) |handle| {
+            self.vkd.destroyFramebuffer(self.device, handle, allocation_callbacks);
+        }
+        self.allocator.free(self.handles);
+    }
+};
+
 pub const Ctx = struct {
     const Self = @This();
 
@@ -354,6 +405,7 @@ pub const Ctx = struct {
     fragment_shader: vk.ShaderModule,
     render_pass: vk.RenderPass,
     graphics_pipeline: GraphicsPipeline,
+    framebuffers: Framebuffers,
 
     debug_messenger: DebugMessenger,
 
@@ -417,6 +469,10 @@ pub const Ctx = struct {
         errdefer graphics_pipeline.deinit();
         vulkanLog("graphics pipeline created", .{});
 
+        var framebuffers = try Framebuffers.init(vkd, allocator, device, &swapchain, render_pass);
+        errdefer framebuffers.deinit();
+        vulkanLog("framebuffers created", .{});
+
         return .{
             .vki = vki,
             .vkd = vkd,
@@ -432,11 +488,15 @@ pub const Ctx = struct {
             .fragment_shader = fragment_shader,
             .render_pass = render_pass,
             .graphics_pipeline = graphics_pipeline,
+            .framebuffers = framebuffers,
             .debug_messenger = debug_messenger,
         };
     }
 
     pub fn deinit(self: *Self) void {
+        self.framebuffers.deinit();
+        vulkanLog("framebuffers destroyed", .{});
+
         self.graphics_pipeline.deinit();
         vulkanLog("graphics pipeline destroyed", .{});
 
