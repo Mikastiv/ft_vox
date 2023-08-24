@@ -20,13 +20,18 @@ pub fn build(b: *std.Build) !void {
     try addShader(b, exe, "shader.vert", "vert.spv");
     try addShader(b, exe, "shader.frag", "frag.spv");
 
-    exe.addIncludePath(.{ .path = "lib/glfw/include" });
-    exe.addLibraryPath(.{ .path = "lib/glfw/lib-vc2022" });
+    // exe.addIncludePath(.{ .path = "lib/glfw/include" });
+    // exe.addLibraryPath(.{ .path = "lib/glfw/lib-vc2022" });
+    // exe.linkLibC();
+    // exe.linkSystemLibrary("user32");
+    // exe.linkSystemLibrary("gdi32");
+    // exe.linkSystemLibrary("shell32");
+    // exe.linkSystemLibrary("glfw3dll");
+    exe.addIncludePath(.{ .path = "lib/linux/glfw-3.3.8/include" });
+    exe.addLibraryPath(.{.path = "lib/linux/glfw-3.3.8/build/src"});
+    exe.linkSystemLibrary("glfw3");
+    exe.linkSystemLibrary("wayland-client");
     exe.linkLibC();
-    exe.linkSystemLibrary("user32");
-    exe.linkSystemLibrary("gdi32");
-    exe.linkSystemLibrary("shell32");
-    exe.linkSystemLibrary("glfw3dll");
 
     b.installArtifact(exe);
 
