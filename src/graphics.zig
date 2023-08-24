@@ -453,7 +453,7 @@ fn createSwapchain(
     extent: vk.Extent2D,
 ) !vk.SwapchainKHR {
     var image_count = surface_capabilities.min_image_count + 1;
-    if (surface_capabilities.min_image_count > 0 and image_count > surface_capabilities.max_image_count) {
+    if (surface_capabilities.max_image_count > 0 and image_count > surface_capabilities.max_image_count) {
         image_count = surface_capabilities.max_image_count;
     }
     vulkanLog("backbuffer count {d}", .{image_count});
@@ -538,7 +538,7 @@ fn pickSwapExtent(
     var height: i32 = 0;
     c.glfwGetFramebufferSize(window, &width, &height);
 
-    if (width != 0 or height != 0) {
+    if (width == 0 or height == 0) {
         return error.FailedToGetFramebufferSize;
     }
 
@@ -547,16 +547,15 @@ fn pickSwapExtent(
         .height = @intCast(height),
     };
 
-    actual_extent.width = std.math.clamp(
-        actual_extent.width,
-        surface_capabilities.min_image_extent.width,
-        surface_capabilities.max_image_extent.width,
-    );
-    actual_extent.height = std.math.clamp(
-        actual_extent.height,
-        surface_capabilities.min_image_extent.height,
-        surface_capabilities.max_image_extent.width,
-    );
+    actual_extent.width = @max(actual_extent.width, surface_capabilities.min_image_extent.width);
+    if (surface_capabilities.max_image_extent.width != 0) {
+        actual_extent.width = @min(actual_extent.width, surface_capabilities.max_image_extent.width);
+    }
+
+    actual_extent.height = @max(actual_extent.height, surface_capabilities.min_image_extent.height);
+    if (surface_capabilities.max_image_extent.height != 0) {
+        actual_extent.height = @min(actual_extent.height, surface_capabilities.max_image_extent.height);
+    }
 
     return actual_extent;
 }
