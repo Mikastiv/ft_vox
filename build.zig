@@ -27,8 +27,8 @@ pub fn build(b: *std.Build) !void {
     // exe.linkSystemLibrary("gdi32");
     // exe.linkSystemLibrary("shell32");
     // exe.linkSystemLibrary("glfw3dll");
-    exe.addIncludePath(.{ .path = "lib/linux/glfw-3.3.8/include" });
-    exe.addLibraryPath(.{.path = "lib/linux/glfw-3.3.8/build/src"});
+    // exe.addIncludePath(.{ .path = "lib/linux/glfw-3.3.8/include" });
+    // exe.addLibraryPath(.{.path = "lib/linux/glfw-3.3.8/build/src"});
     exe.linkSystemLibrary("glfw3");
     exe.linkSystemLibrary("wayland-client");
     exe.linkLibC();

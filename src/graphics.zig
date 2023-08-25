@@ -74,6 +74,7 @@ const DeviceFunctions = vk.DeviceWrapper(.{
     .acquireNextImageKHR = true,
     .resetCommandBuffer = true,
     .queueSubmit = true,
+    .queuePresentKHR = true,
 });
 
 const QueueFamiliesIndices = struct {
@@ -603,6 +604,7 @@ pub const Ctx = struct {
             self.render_pass,
             self.framebuffers.handles[index],
             self.swapchain.extent,
+            self.graphics_pipeline.handle,
         );
 
         const wait_semaphores = [_]vk.Semaphore{self.sync.image_available};
@@ -621,6 +623,18 @@ pub const Ctx = struct {
         const submits = [_]vk.SubmitInfo{submit_info};
 
         try self.vkd.queueSubmit(self.graphics_queue, submits.len, &submits, self.sync.in_flight);
+
+        const swapchains = [_]vk.SwapchainKHR{self.swapchain.handle};
+        const indices = [_]u32{index};
+        const present_info = vk.PresentInfoKHR{
+            .wait_semaphore_count = signal_semaphores.len,
+            .p_wait_semaphores = &signal_semaphores,
+            .swapchain_count = swapchains.len,
+            .p_swapchains = &swapchains,
+            .p_image_indices = &indices,
+        };
+
+        _ = try self.vkd.queuePresentKHR(self.present_queue, &present_info);
     }
 };
 
@@ -630,6 +644,7 @@ fn recordCommandBuffer(
     render_pass: vk.RenderPass,
     framebuffer: vk.Framebuffer,
     extent: vk.Extent2D,
+    graphics_pipeline: vk.Pipeline,
 ) !void {
     const begin_info = vk.CommandBufferBeginInfo{
         .flags = .{},
@@ -639,13 +654,13 @@ fn recordCommandBuffer(
     try vkd.beginCommandBuffer(command_buffer, &begin_info);
 
     const clear_colors = [_]vk.ClearValue{
-        .{ 0, 0, 0, 1 },
+        .{ .color = .{ .float_32 = .{ 0, 0, 0, 1 } } },
     };
     const render_pass_begin_info = vk.RenderPassBeginInfo{
         .render_pass = render_pass,
         .framebuffer = framebuffer,
         .render_area = .{
-            .offset = .{ 0, 0 },
+            .offset = .{ .x = 0, .y = 0 },
             .extent = extent,
         },
         .clear_value_count = clear_colors.len,
@@ -653,6 +668,7 @@ fn recordCommandBuffer(
     };
 
     vkd.cmdBeginRenderPass(command_buffer, &render_pass_begin_info, .@"inline");
+    vkd.cmdBindPipeline(command_buffer, .graphics, graphics_pipeline);
 
     const viewports = [_]vk.Viewport{
         .{
@@ -729,11 +745,24 @@ fn createRenderPass(vkd: DeviceFunctions, device: vk.Device, format: vk.Format) 
         },
     };
 
+    const dependencies = [_]vk.SubpassDependency{
+        .{
+            .src_subpass = vk.SUBPASS_EXTERNAL,
+            .dst_subpass = 0,
+            .src_stage_mask = .{ .color_attachment_output_bit = true },
+            .dst_stage_mask = .{ .color_attachment_output_bit = true },
+            .src_access_mask = .{},
+            .dst_access_mask = .{ .color_attachment_write_bit = true },
+        },
+    };
+
     const render_pass_create_info = vk.RenderPassCreateInfo{
         .attachment_count = color_attachments.len,
         .p_attachments = &color_attachments,
         .subpass_count = subpasses.len,
         .p_subpasses = &subpasses,
+        .dependency_count = dependencies.len,
+        .p_dependencies = &dependencies,
     };
 
     return vkd.createRenderPass(device, &render_pass_create_info, allocation_callbacks);
