@@ -75,6 +75,7 @@ const DeviceFunctions = vk.DeviceWrapper(.{
     .resetCommandBuffer = true,
     .queueSubmit = true,
     .queuePresentKHR = true,
+    .deviceWaitIdle = true,
 });
 
 const QueueFamiliesIndices = struct {
@@ -635,6 +636,10 @@ pub const Ctx = struct {
         };
 
         _ = try self.vkd.queuePresentKHR(self.present_queue, &present_info);
+    }
+
+    pub fn waitForIdle(self: *const Self) !void {
+        try self.vkd.deviceWaitIdle(self.device);
     }
 };
 

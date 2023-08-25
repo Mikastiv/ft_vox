@@ -26,4 +26,6 @@ pub fn main() !void {
         glfw.pollEvents();
         try ctx.drawFrame();
     }
+
+    try ctx.waitForIdle();
 }
