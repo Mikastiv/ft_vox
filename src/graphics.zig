@@ -65,6 +65,15 @@ const DeviceFunctions = vk.DeviceWrapper(.{
     .cmdSetViewport = true,
     .cmdSetScissor = true,
     .cmdDraw = true,
+    .createSemaphore = true,
+    .destroySemaphore = true,
+    .createFence = true,
+    .destroyFence = true,
+    .waitForFences = true,
+    .resetFences = true,
+    .acquireNextImageKHR = true,
+    .resetCommandBuffer = true,
+    .queueSubmit = true,
 });
 
 const QueueFamiliesIndices = struct {
@@ -376,6 +385,42 @@ const Framebuffers = struct {
     }
 };
 
+const Sync = struct {
+    const Self = @This();
+
+    vkd: DeviceFunctions,
+    device: vk.Device,
+
+    image_available: vk.Semaphore,
+    render_finished: vk.Semaphore,
+    in_flight: vk.Fence,
+
+    fn init(vkd: DeviceFunctions, device: vk.Device) !Self {
+        const semaphore_create_info = vk.SemaphoreCreateInfo{};
+        const fence_create_info = vk.FenceCreateInfo{
+            .flags = .{ .signaled_bit = true },
+        };
+
+        const image_available = try vkd.createSemaphore(device, &semaphore_create_info, allocation_callbacks);
+        const render_finished = try vkd.createSemaphore(device, &semaphore_create_info, allocation_callbacks);
+        const in_flight = try vkd.createFence(device, &fence_create_info, allocation_callbacks);
+
+        return .{
+            .vkd = vkd,
+            .device = device,
+            .image_available = image_available,
+            .render_finished = render_finished,
+            .in_flight = in_flight,
+        };
+    }
+
+    fn deinit(self: *Self) void {
+        self.vkd.destroySemaphore(self.device, self.image_available, allocation_callbacks);
+        self.vkd.destroySemaphore(self.device, self.render_finished, allocation_callbacks);
+        self.vkd.destroyFence(self.device, self.in_flight, allocation_callbacks);
+    }
+};
+
 pub const Ctx = struct {
     const Self = @This();
 
@@ -398,6 +443,7 @@ pub const Ctx = struct {
     framebuffers: Framebuffers,
     command_pool: vk.CommandPool,
     command_buffer: vk.CommandBuffer,
+    sync: Sync,
 
     debug_messenger: DebugMessenger,
 
@@ -471,6 +517,10 @@ pub const Ctx = struct {
         const command_buffer = try createCommandBuffer(vkd, device, command_pool);
         vulkanLog("command buffer created", .{});
 
+        const sync = try Sync.init(vkd, device);
+        errdefer sync.deinit();
+        vulkanLog("sync objects created", .{});
+
         return .{
             .vki = vki,
             .vkd = vkd,
@@ -489,11 +539,15 @@ pub const Ctx = struct {
             .framebuffers = framebuffers,
             .command_pool = command_pool,
             .command_buffer = command_buffer,
+            .sync = sync,
             .debug_messenger = debug_messenger,
         };
     }
 
     pub fn deinit(self: *Self) void {
+        self.sync.deinit();
+        vulkanLog("sync objects destroyed", .{});
+
         self.vkd.destroyCommandPool(self.device, self.command_pool, allocation_callbacks);
         vulkanLog("command pool destroyed", .{});
 
@@ -526,6 +580,47 @@ pub const Ctx = struct {
 
         self.vki.destroyInstance(self.instance, allocation_callbacks);
         vulkanLog("instance destroyed", .{});
+    }
+
+    pub fn drawFrame(self: *Self) !void {
+        const fences = [_]vk.Fence{self.sync.in_flight};
+        _ = try self.vkd.waitForFences(self.device, fences.len, &fences, vk.TRUE, std.math.maxInt(u64));
+        try self.vkd.resetFences(self.device, fences.len, &fences);
+
+        const next_image_result = try self.vkd.acquireNextImageKHR(
+            self.device,
+            self.swapchain.handle,
+            std.math.maxInt(u64),
+            self.sync.image_available,
+            .null_handle,
+        );
+        const index = next_image_result.image_index;
+
+        try self.vkd.resetCommandBuffer(self.command_buffer, .{});
+        try recordCommandBuffer(
+            self.vkd,
+            self.command_buffer,
+            self.render_pass,
+            self.framebuffers.handles[index],
+            self.swapchain.extent,
+        );
+
+        const wait_semaphores = [_]vk.Semaphore{self.sync.image_available};
+        const wait_stages = [_]vk.PipelineStageFlags{.{ .color_attachment_output_bit = true }};
+        const command_buffers = [_]vk.CommandBuffer{self.command_buffer};
+        const signal_semaphores = [_]vk.Semaphore{self.sync.render_finished};
+        const submit_info = vk.SubmitInfo{
+            .wait_semaphore_count = wait_semaphores.len,
+            .p_wait_semaphores = &wait_semaphores,
+            .p_wait_dst_stage_mask = &wait_stages,
+            .command_buffer_count = command_buffers.len,
+            .p_command_buffers = &command_buffers,
+            .signal_semaphore_count = signal_semaphores.len,
+            .p_signal_semaphores = &signal_semaphores,
+        };
+        const submits = [_]vk.SubmitInfo{submit_info};
+
+        try self.vkd.queueSubmit(self.graphics_queue, submits.len, &submits, self.sync.in_flight);
     }
 };
 
