@@ -17,7 +17,6 @@ pub fn terminate() void {
 
 pub fn createWindow(width: i32, height: i32, title: [:0]const u8) !*c.GLFWwindow {
     c.glfwWindowHint(c.GLFW_CLIENT_API, c.GLFW_NO_API);
-    c.glfwWindowHint(c.GLFW_RESIZABLE, c.GLFW_FALSE);
     const window = c.glfwCreateWindow(width, height, title, null, null) orelse return error.WindowInitFailed;
     return window;
 }
