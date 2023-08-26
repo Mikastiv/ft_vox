@@ -208,6 +208,7 @@ const Swapchain = struct {
         self.allocator.free(self.image_views);
 
         self.images = try fetchSwapchainImages(self.vkd, self.allocator, self.device, self.handle);
+        errdefer self.allocator.free(self.images);
 
         self.image_views = try createImageViews(
             self.vkd,
@@ -216,6 +217,7 @@ const Swapchain = struct {
             self.images,
             self.surface_format.format,
         );
+        errdefer self.allocator.free(self.image_views);
     }
 
     fn destroySwapchainAndViews(self: *Self) void {
@@ -519,6 +521,7 @@ pub const Ctx = struct {
 
     allocator: std.mem.Allocator,
 
+    window: *c.GLFWwindow,
     instance: vk.Instance,
     surface: vk.SurfaceKHR,
     physical_device: PhysicalDevice,
@@ -535,10 +538,13 @@ pub const Ctx = struct {
     command_buffers: [max_frames_in_flight]vk.CommandBuffer,
     sync: Sync,
     current_frame: u32 = 0,
+    framebuffer_resized: bool = false,
 
     debug_messenger: DebugMessenger,
 
     pub fn init(allocator: Allocator, app_name: [*:0]const u8, window: *c.GLFWwindow) !Ctx {
+        _ = c.glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
+
         const vkb = try BaseFunctions.load(c.glfwGetInstanceProcAddress);
 
         const instance = try createInstance(vkb, allocator, app_name);
@@ -617,6 +623,7 @@ pub const Ctx = struct {
             .vki = vki,
             .vkd = vkd,
             .allocator = allocator,
+            .window = window,
             .instance = instance,
             .surface = surface,
             .physical_device = physical_device,
@@ -740,7 +747,8 @@ pub const Ctx = struct {
             return err;
         };
 
-        if (present_result == vk.Result.suboptimal_khr) {
+        if (present_result == vk.Result.suboptimal_khr or self.framebuffer_resized) {
+            self.framebuffer_resized = false;
             try self.recreateSwapchain();
         }
 
@@ -752,11 +760,32 @@ pub const Ctx = struct {
     }
 
     pub fn recreateSwapchain(self: *Self) !void {
+        var width: c_int = 0;
+        var height: c_int = 0;
+        c.glfwGetFramebufferSize(self.window, &width, &height);
+        while (width == 0 or height == 0) {
+            c.glfwGetFramebufferSize(self.window, &width, &height);
+            c.glfwWaitEvents();
+        }
         try self.waitForIdle();
         try self.swapchain.recreate();
         try self.framebuffers.recreate(&self.swapchain, self.render_pass);
     }
 };
+
+fn framebufferResizeCallback(window: ?*c.GLFWwindow, width: c_int, height: c_int) callconv(.C) void {
+    _ = height;
+    _ = width;
+
+    var ptr = c.glfwGetWindowUserPointer(window);
+    if (ptr == null) {
+        std.log.warn("glfw: resize callback user pointer null", .{});
+        return;
+    }
+
+    var ctx: *Ctx = @ptrCast(@alignCast(ptr.?));
+    ctx.framebuffer_resized = true;
+}
 
 fn recordCommandBuffer(
     vkd: DeviceFunctions,
@@ -1036,8 +1065,8 @@ fn pickSwapExtent(
         return surface_capabilities.current_extent;
     }
 
-    var width: i32 = 0;
-    var height: i32 = 0;
+    var width: c_int = 0;
+    var height: c_int = 0;
     c.glfwGetFramebufferSize(window, &width, &height);
 
     if (width == 0 or height == 0) {

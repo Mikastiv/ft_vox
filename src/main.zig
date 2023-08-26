@@ -21,6 +21,7 @@ pub fn main() !void {
 
     var ctx = try gfx.Ctx.init(alloc, app_name, window);
     defer ctx.deinit();
+    c.glfwSetWindowUserPointer(window, &ctx);
 
     while (!glfw.windowShouldClose(window)) {
         glfw.pollEvents();
