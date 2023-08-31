@@ -85,9 +85,14 @@ const QueueFamiliesIndices = struct {
 
     graphics_family: ?u32 = null,
     present_family: ?u32 = null,
+    compute_family: ?u32 = null,
+    transfer_family: ?u32 = null,
 
     fn isComplete(self: Self) bool {
-        return self.graphics_family != null and self.present_family != null;
+        return self.graphics_family != null and
+            self.present_family != null and
+            self.compute_family != null and
+            self.transfer_family != null;
     }
 };
 
@@ -99,6 +104,8 @@ const PhysicalDevice = struct {
     memory_properties: vk.PhysicalDeviceMemoryProperties,
     graphics_family: u32,
     present_family: u32,
+    compute_family: u32,
+    transfer_family: u32,
 
     fn init(vki: InstanceFunctions, allocator: Allocator, device: vk.PhysicalDevice, surface: vk.SurfaceKHR) !Self {
         const queue_families = try findQueueFamilies(vki, allocator, device, surface);
@@ -113,6 +120,8 @@ const PhysicalDevice = struct {
             .memory_properties = vki.getPhysicalDeviceMemoryProperties(device),
             .graphics_family = queue_families.graphics_family.?,
             .present_family = queue_families.present_family.?,
+            .compute_family = queue_families.compute_family.?,
+            .transfer_family = queue_families.transfer_family.?,
         };
     }
 };
@@ -528,6 +537,8 @@ pub const Ctx = struct {
     device: vk.Device,
     graphics_queue: vk.Queue,
     present_queue: vk.Queue,
+    compute_queue: vk.Queue,
+    transfer_queue: vk.Queue,
     swapchain: Swapchain,
     vertex_shader: vk.ShaderModule,
     fragment_shader: vk.ShaderModule,
@@ -572,6 +583,10 @@ pub const Ctx = struct {
         vulkanLog("graphics family index {d}", .{physical_device.graphics_family});
         const present_queue = vkd.getDeviceQueue(device, physical_device.present_family, 0);
         vulkanLog("present family index {d}", .{physical_device.present_family});
+        const compute_queue = vkd.getDeviceQueue(device, physical_device.compute_family, 0);
+        vulkanLog("compute family index {d}", .{physical_device.compute_family});
+        const transfer_queue = vkd.getDeviceQueue(device, physical_device.transfer_family, 0);
+        vulkanLog("transfer family index {d}", .{physical_device.transfer_family});
 
         var swapchain = try Swapchain.init(vki, vkd, allocator, physical_device, device, surface, window);
         errdefer swapchain.deinit();
@@ -630,6 +645,8 @@ pub const Ctx = struct {
             .device = device,
             .graphics_queue = graphics_queue,
             .present_queue = present_queue,
+            .compute_queue = compute_queue,
+            .transfer_queue = transfer_queue,
             .swapchain = swapchain,
             .vertex_shader = vertex_shader,
             .fragment_shader = fragment_shader,
@@ -1097,6 +1114,8 @@ fn createLogicalDevice(vki: InstanceFunctions, allocator: Allocator, physical_de
 
     try unique_queues_families.put(physical_device.graphics_family, {});
     try unique_queues_families.put(physical_device.present_family, {});
+    try unique_queues_families.put(physical_device.compute_family, {});
+    try unique_queues_families.put(physical_device.transfer_family, {});
 
     var queue_create_infos = std.ArrayList(vk.DeviceQueueCreateInfo).init(allocator);
     defer queue_create_infos.deinit();
@@ -1357,12 +1376,12 @@ fn isDeviceSuitable(
 
     const queue_families = try findQueueFamilies(vki, allocator, physical_device, surface);
 
-    const swap_chain_support = try checkSwapChainSupport(vki, physical_device, surface);
+    const swap_chain_support = try checkSwapchainSupport(vki, physical_device, surface);
 
     return queue_families.isComplete() and swap_chain_support;
 }
 
-fn checkSwapChainSupport(
+fn checkSwapchainSupport(
     vki: InstanceFunctions,
     physical_device: vk.PhysicalDevice,
     surface: vk.SurfaceKHR,
@@ -1433,7 +1452,17 @@ fn findQueueFamilies(
             queue_families_indices.present_family = idx;
         }
 
-        if (queue_families_indices.isComplete()) break;
+        if (queue_families_indices.compute_family == null and family.queue_flags.compute_bit) {
+            queue_families_indices.compute_family = idx;
+        } else if (queue_families_indices.compute_family != null and family.queue_flags.compute_bit and !family.queue_flags.graphics_bit) {
+            queue_families_indices.compute_family = idx;
+        }
+
+        if (queue_families_indices.transfer_family == null and family.queue_flags.transfer_bit) {
+            queue_families_indices.transfer_family = idx;
+        } else if (queue_families_indices.transfer_family != null and family.queue_flags.transfer_bit and !family.queue_flags.compute_bit) {
+            queue_families_indices.transfer_family = idx;
+        }
     }
 
     return queue_families_indices;
