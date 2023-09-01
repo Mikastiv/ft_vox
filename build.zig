@@ -30,7 +30,7 @@ pub fn build(b: *std.Build) !void {
     // exe.addIncludePath(.{ .path = "lib/linux/glfw-3.3.8/include" });
     // exe.addLibraryPath(.{.path = "lib/linux/glfw-3.3.8/build/src"});
     exe.linkSystemLibrary("glfw3");
-    exe.linkSystemLibrary("wayland-client");
+    // exe.linkSystemLibrary("wayland-client");
     exe.linkLibC();
 
     b.installArtifact(exe);

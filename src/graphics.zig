@@ -1095,15 +1095,17 @@ fn pickSwapExtent(
         .height = @intCast(height),
     };
 
-    actual_extent.width = @max(actual_extent.width, surface_capabilities.min_image_extent.width);
-    if (surface_capabilities.max_image_extent.width != 0) {
-        actual_extent.width = @min(actual_extent.width, surface_capabilities.max_image_extent.width);
-    }
+    actual_extent.width = std.math.clamp(
+        actual_extent.width,
+        actual_extent.width,
+        surface_capabilities.min_image_extent.width,
+    );
 
-    actual_extent.height = @max(actual_extent.height, surface_capabilities.min_image_extent.height);
-    if (surface_capabilities.max_image_extent.height != 0) {
-        actual_extent.height = @min(actual_extent.height, surface_capabilities.max_image_extent.height);
-    }
+    actual_extent.height = std.math.clamp(
+        actual_extent.height,
+        actual_extent.height,
+        surface_capabilities.min_image_extent.height,
+    );
 
     return actual_extent;
 }
