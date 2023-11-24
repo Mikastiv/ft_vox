@@ -1,6 +1,7 @@
 const std = @import("std");
 const vk = @import("vulkan");
-const c = @import("c.zig");
+const glfw = @import("glfw");
+const builtin = @import("builtin");
 
 const Allocator = std.mem.Allocator;
 
@@ -134,7 +135,7 @@ const Swapchain = struct {
     allocator: Allocator,
     physical_device: PhysicalDevice,
     surface: vk.SurfaceKHR,
-    window: *c.GLFWwindow,
+    window: glfw.Window,
 
     handle: vk.SwapchainKHR,
     device: vk.Device,
@@ -152,7 +153,7 @@ const Swapchain = struct {
         physical_device: PhysicalDevice,
         device: vk.Device,
         surface: vk.SurfaceKHR,
-        window: *c.GLFWwindow,
+        window: glfw.Window,
     ) !Self {
         const surface_format = try pickSwapSurfaceFormat(vki, allocator, physical_device.handle, surface);
         const present_mode = try pickSwapPresentMode(vki, allocator, physical_device.handle, surface);
@@ -530,7 +531,7 @@ pub const Ctx = struct {
 
     allocator: std.mem.Allocator,
 
-    window: *c.GLFWwindow,
+    window: glfw.Window,
     instance: vk.Instance,
     surface: vk.SurfaceKHR,
     physical_device: PhysicalDevice,
@@ -553,13 +554,13 @@ pub const Ctx = struct {
 
     debug_messenger: DebugMessenger,
 
-    pub fn init(allocator: Allocator, app_name: [*:0]const u8, window: *c.GLFWwindow) !Ctx {
-        _ = c.glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
+    pub fn init(allocator: Allocator, app_name: [*:0]const u8, window: glfw.Window) !Ctx {
+        window.setFramebufferSizeCallback(framebufferSizeCallback);
 
-        const vkb = try BaseFunctions.load(c.glfwGetInstanceProcAddress);
+        const vkb = try BaseFunctions.load(@as(vk.PfnGetInstanceProcAddr, @ptrCast(&glfw.getInstanceProcAddress)));
 
         const instance = try createInstance(vkb, allocator, app_name);
-        const vki = try InstanceFunctions.load(instance, vkb.dispatch.vkGetInstanceProcAddr);
+        const vki = try InstanceFunctions.load(instance, @as(vk.PfnGetInstanceProcAddr, @ptrCast(&glfw.getInstanceProcAddress)));
         errdefer vki.destroyInstance(instance, allocation_callbacks);
         vulkanLog("instance created", .{});
 
@@ -777,12 +778,10 @@ pub const Ctx = struct {
     }
 
     pub fn recreateSwapchain(self: *Self) !void {
-        var width: c_int = 0;
-        var height: c_int = 0;
-        c.glfwGetFramebufferSize(self.window, &width, &height);
-        while (width == 0 or height == 0) {
-            c.glfwGetFramebufferSize(self.window, &width, &height);
-            c.glfwWaitEvents();
+        var size = self.window.getFramebufferSize();
+        while (size.width == 0 or size.height == 0) {
+            size = self.window.getFramebufferSize();
+            glfw.waitEvents();
         }
         try self.waitForIdle();
         try self.swapchain.recreate();
@@ -790,18 +789,14 @@ pub const Ctx = struct {
     }
 };
 
-fn framebufferResizeCallback(window: ?*c.GLFWwindow, width: c_int, height: c_int) callconv(.C) void {
-    _ = height;
-    _ = width;
-
-    var ptr = c.glfwGetWindowUserPointer(window);
-    if (ptr == null) {
+fn framebufferSizeCallback(window: glfw.Window, _: u32, _: u32) void {
+    var ctx = window.getUserPointer(Ctx);
+    if (ctx == null) {
         std.log.warn("glfw: resize callback user pointer null", .{});
         return;
     }
 
-    var ctx: *Ctx = @ptrCast(@alignCast(ptr.?));
-    ctx.framebuffer_resized = true;
+    ctx.?.framebuffer_resized = true;
 }
 
 fn recordCommandBuffer(
@@ -1076,23 +1071,21 @@ fn pickSwapPresentMode(
 
 fn pickSwapExtent(
     surface_capabilities: vk.SurfaceCapabilitiesKHR,
-    window: *c.GLFWwindow,
+    window: glfw.Window,
 ) !vk.Extent2D {
     if (surface_capabilities.current_extent.width != std.math.maxInt(u32)) {
         return surface_capabilities.current_extent;
     }
 
-    var width: c_int = 0;
-    var height: c_int = 0;
-    c.glfwGetFramebufferSize(window, &width, &height);
+    const size = window.getFramebufferSize();
 
-    if (width == 0 or height == 0) {
+    if (size.width == 0 or size.height == 0) {
         return error.FailedToGetFramebufferSize;
     }
 
     var actual_extent = vk.Extent2D{
-        .width = @intCast(width),
-        .height = @intCast(height),
+        .width = size.width,
+        .height = size.height,
     };
 
     actual_extent.width = std.math.clamp(
@@ -1213,16 +1206,21 @@ fn createInstance(vkb: BaseFunctions, allocator: Allocator, app_name: [*:0]const
 }
 
 fn getRequiredExtensions(allocator: Allocator) ![][*:0]const u8 {
-    var glfwExtensionCount: u32 = 0;
-    const glfwExtensions: [*]const [*:0]const u8 = @ptrCast(c.glfwGetRequiredInstanceExtensions(&glfwExtensionCount));
+    var glfw_extension_count: u32 = 0;
+    const glfw_extensions = glfw.getRequiredInstanceExtensions() orelse return error.FailedToFetchGlfwRequiredExtensions;
 
     var extensions = std.ArrayList([*:0]const u8).init(allocator);
     errdefer extensions.deinit();
 
-    try extensions.appendSlice(glfwExtensions[0..glfwExtensionCount]);
+    try extensions.appendSlice(glfw_extensions[0..glfw_extension_count]);
 
     if (enable_validation) {
         try extensions.appendSlice(&debug_extensions);
+    }
+
+    if (builtin.os.tag == .macos) {
+        try extensions.append(vk.extension_info.ext_metal_surface.name);
+        try extensions.append(vk.extension_info.khr_surface.name);
     }
 
     return extensions.toOwnedSlice();
@@ -1318,9 +1316,9 @@ fn vulkanLog(comptime format: []const u8, args: anytype) void {
     std.log.info("vulkan: " ++ format, args);
 }
 
-fn createWindowSurface(instance: vk.Instance, window: *c.GLFWwindow) !vk.SurfaceKHR {
+fn createWindowSurface(instance: vk.Instance, window: glfw.Window) !vk.SurfaceKHR {
     var surface: vk.SurfaceKHR = undefined;
-    if (c.glfwCreateWindowSurface(instance, window, null, &surface) != .success) {
+    if (glfw.createWindowSurface(instance, window, allocation_callbacks, &surface) != @intFromEnum(vk.Result.success)) {
         return error.SurfaceCreationFailed;
     }
 
