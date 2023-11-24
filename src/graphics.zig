@@ -1110,6 +1110,28 @@ fn pickSwapExtent(
     return actual_extent;
 }
 
+fn physicalDeviceHasPortabilitySubsetExtension(
+    vki: InstanceFunctions,
+    allocator: Allocator,
+    physical_device: PhysicalDevice,
+) !bool {
+    var extension_count: u32 = 0;
+    _ = try vki.enumerateDeviceExtensionProperties(physical_device.handle, null, &extension_count, null);
+
+    const extensions = try allocator.alloc(vk.ExtensionProperties, extension_count);
+    defer allocator.free(extensions);
+
+    _ = try vki.enumerateDeviceExtensionProperties(physical_device.handle, null, &extension_count, extensions.ptr);
+
+    for (extensions) |extension| {
+        if (std.mem.orderZ(u8, @as([*:0]const u8, @ptrCast(&extension.extension_name)), vk.extension_info.khr_portability_subset.name) == .eq) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 fn createLogicalDevice(vki: InstanceFunctions, allocator: Allocator, physical_device: PhysicalDevice) !vk.Device {
     var unique_queues_families = std.AutoHashMap(u32, void).init(allocator);
     defer unique_queues_families.deinit();
@@ -1136,12 +1158,23 @@ fn createLogicalDevice(vki: InstanceFunctions, allocator: Allocator, physical_de
 
     const physical_device_features = vk.PhysicalDeviceFeatures{};
 
+    var extensions = std.ArrayList([*:0]const u8).init(allocator);
+    defer extensions.deinit();
+
+    for (required_device_extensions) |e| {
+        try extensions.append(e);
+    }
+
+    if (try physicalDeviceHasPortabilitySubsetExtension(vki, allocator, physical_device)) {
+        try extensions.append(vk.extension_info.khr_portability_subset.name);
+    }
+
     const device_create_info = vk.DeviceCreateInfo{
         .queue_create_info_count = @as(u32, @intCast(queue_create_infos.items.len)),
         .p_queue_create_infos = queue_create_infos.items.ptr,
         .p_enabled_features = &physical_device_features,
-        .enabled_extension_count = required_device_extensions.len,
-        .pp_enabled_extension_names = @as([*]const [*:0]const u8, @ptrCast(&required_device_extensions)),
+        .enabled_extension_count = @intCast(extensions.items.len),
+        .pp_enabled_extension_names = @as([*]const [*:0]const u8, @ptrCast(extensions.items)),
         .enabled_layer_count = if (enable_validation) @as(u32, @intCast(validation_layers.len)) else 0,
         .pp_enabled_layer_names = if (enable_validation) &validation_layers else null,
     };
@@ -1159,7 +1192,7 @@ fn createInstance(vkb: BaseFunctions, allocator: Allocator, app_name: [*:0]const
         .application_version = vk.makeApiVersion(0, 1, 0, 0),
         .p_engine_name = app_name,
         .engine_version = vk.makeApiVersion(0, 1, 0, 0),
-        .api_version = vk.API_VERSION_1_3,
+        .api_version = vk.API_VERSION_1_2,
     };
 
     const extensions = try getRequiredExtensions(allocator);

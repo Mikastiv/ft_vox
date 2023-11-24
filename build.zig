@@ -5,7 +5,7 @@ pub fn build(b: *std.Build) !void {
     const optimize = b.standardOptimizeOption(.{});
 
     const exe = b.addExecutable(.{
-        .name = "scop",
+        .name = "ft_vox",
         .root_source_file = .{ .path = "src/main.zig" },
         .target = target,
         .optimize = optimize,
@@ -17,21 +17,15 @@ pub fn build(b: *std.Build) !void {
     const vkzig_bindings = vkzig_dep.module("vulkan-zig");
     exe.addModule("vulkan", vkzig_bindings);
 
+    const glfw_dep = b.dependency("mach_glfw", .{
+        .target = exe.target,
+        .optimize = exe.optimize,
+    });
+    exe.addModule("glfw", glfw_dep.module("mach-glfw"));
+    @import("mach_glfw").link(glfw_dep.builder, exe);
+
     try addShader(b, exe, "shader.vert", "vert.spv");
     try addShader(b, exe, "shader.frag", "frag.spv");
-
-    // exe.addIncludePath(.{ .path = "lib/glfw/include" });
-    // exe.addLibraryPath(.{ .path = "lib/glfw/lib-vc2022" });
-    // exe.linkLibC();
-    // exe.linkSystemLibrary("user32");
-    // exe.linkSystemLibrary("gdi32");
-    // exe.linkSystemLibrary("shell32");
-    // exe.linkSystemLibrary("glfw3dll");
-    // exe.addIncludePath(.{ .path = "lib/linux/glfw-3.3.8/include" });
-    // exe.addLibraryPath(.{.path = "lib/linux/glfw-3.3.8/build/src"});
-    exe.linkSystemLibrary("glfw3");
-    // exe.linkSystemLibrary("wayland-client");
-    exe.linkLibC();
 
     b.installArtifact(exe);
 
@@ -54,7 +48,7 @@ fn addShader(b: *std.Build, exe: *std.Build.Step.Compile, in_file: []const u8, o
 
     const run_cmd = b.addSystemCommand(&[_][]const u8{
         "glslc",
-        "--target-env=vulkan1.3",
+        // "--target-env=vulkan1.2",
         "-o",
         full_out,
         full_in,
