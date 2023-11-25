@@ -5,6 +5,7 @@ const builtin = @import("builtin");
 
 const Allocator = std.mem.Allocator;
 
+const shader_byte_code_align = 4;
 const max_frames_in_flight = 2;
 
 const enable_validation = std.debug.runtime_safety;
@@ -1501,16 +1502,16 @@ fn findQueueFamilies(
     return queue_families_indices;
 }
 
-fn loadShaderByteCode(allocator: Allocator, comptime file: []const u8) ![]align(4) const u8 {
+fn loadShaderByteCode(allocator: Allocator, comptime file: []const u8) ![]align(shader_byte_code_align) const u8 {
     const shader_dir = "shaders/";
     const shader = try std.fs.cwd().openFile(shader_dir ++ file, .{});
 
     const size = try shader.getEndPos();
-    if (!std.mem.isAligned(size, 4)) {
+    if (!std.mem.isAligned(size, shader_byte_code_align)) {
         return error.WrongShaderByteCodeAlignement;
     }
 
-    var byte_code = try allocator.alignedAlloc(u8, 4, size);
+    var byte_code = try allocator.alignedAlloc(u8, shader_byte_code_align, size);
     errdefer allocator.free(byte_code);
 
     _ = try shader.readAll(byte_code);
