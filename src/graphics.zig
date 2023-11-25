@@ -1118,7 +1118,8 @@ fn physicalDeviceHasPortabilitySubsetExtension(
     _ = try vki.enumerateDeviceExtensionProperties(physical_device.handle, null, &extension_count, extensions.ptr);
 
     for (extensions) |extension| {
-        if (std.mem.orderZ(u8, @as([*:0]const u8, @ptrCast(&extension.extension_name)), vk.extension_info.khr_portability_subset.name) == .eq) {
+        const ext_name: [*:0]const u8 = @ptrCast(&extension.extension_name);
+        if (std.mem.orderZ(u8, ext_name, vk.extension_info.khr_portability_subset.name) == .eq) {
             return true;
         }
     }
@@ -1212,9 +1213,7 @@ fn getRequiredExtensions(allocator: Allocator) ![][*:0]const u8 {
     var extensions = std.ArrayList([*:0]const u8).init(allocator);
     errdefer extensions.deinit();
 
-    for (glfw_extensions) |ext| {
-        try extensions.append(ext);
-    }
+    try extensions.appendSlice(glfw_extensions);
 
     if (enable_validation) {
         try extensions.appendSlice(&debug_extensions);
