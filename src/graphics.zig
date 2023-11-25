@@ -1207,21 +1207,17 @@ fn createInstance(vkb: BaseFunctions, allocator: Allocator, app_name: [*:0]const
 }
 
 fn getRequiredExtensions(allocator: Allocator) ![][*:0]const u8 {
-    var glfw_extension_count: u32 = 0;
     const glfw_extensions = glfw.getRequiredInstanceExtensions() orelse return error.FailedToFetchGlfwRequiredExtensions;
 
     var extensions = std.ArrayList([*:0]const u8).init(allocator);
     errdefer extensions.deinit();
 
-    try extensions.appendSlice(glfw_extensions[0..glfw_extension_count]);
+    for (glfw_extensions) |ext| {
+        try extensions.append(ext);
+    }
 
     if (enable_validation) {
         try extensions.appendSlice(&debug_extensions);
-    }
-
-    if (builtin.os.tag == .macos) {
-        try extensions.append(vk.extension_info.ext_metal_surface.name);
-        try extensions.append(vk.extension_info.khr_surface.name);
     }
 
     return extensions.toOwnedSlice();
