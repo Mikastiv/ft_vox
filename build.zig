@@ -43,8 +43,8 @@ pub fn build(b: *std.Build) !void {
 
 fn addShader(b: *std.Build, exe: *std.Build.Step.Compile, in_file: []const u8, out_file: []const u8) !void {
     const dirname = "shaders";
-    const full_in = try std.fs.path.join(b.allocator, &[_][]const u8{ dirname, in_file });
-    const full_out = try std.fs.path.join(b.allocator, &[_][]const u8{ dirname, out_file });
+    const full_in = b.pathJoin(&.{ dirname, in_file });
+    const full_out = b.pathJoin(&.{ dirname, out_file });
 
     const run_cmd = b.addSystemCommand(&[_][]const u8{
         "glslc",
