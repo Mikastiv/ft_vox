@@ -9,6 +9,12 @@ const Allocator = std.mem.Allocator;
 const shader_byte_code_align = 4;
 const max_frames_in_flight = 2;
 
+const const_vertices = [_]Vertex{
+    .{ .pos = .{ 0.0, -0.5 }, .color = .{ 1.0, 1.0, 1.0 } },
+    .{ .pos = .{ 0.5, 0.5 }, .color = .{ 0.0, 1.0, 0.0 } },
+    .{ .pos = .{ -0.5, 0.5 }, .color = .{ 0.0, 0.0, 1.0 } },
+};
+
 const enable_validation = std.debug.runtime_safety;
 const validation_layers = [_][*:0]const u8{"VK_LAYER_KHRONOS_validation"};
 const debug_extensions = [_][*:0]const u8{vk.extension_info.ext_debug_utils.name};
@@ -613,13 +619,7 @@ pub const Ctx = struct {
         vulkanLog("selected extent {d}x{d}", .{ swapchain.extent.width, swapchain.extent.height });
         vulkanLog("framebuffer count {d}", .{swapchain.images.len});
 
-        const vertices = [_]Vertex{
-            .{ .pos = .{ 0.0, -0.5 }, .color = .{ 1.0, 0.0, 0.0 } },
-            .{ .pos = .{ 0.5, 0.5 }, .color = .{ 0.0, 1.0, 0.0 } },
-            .{ .pos = .{ -0.5, 0.5 }, .color = .{ 0.0, 0.0, 1.0 } },
-        };
-
-        const vertex_buffer = try createVertexBuffer(vkd, device, &vertices);
+        const vertex_buffer = try createVertexBuffer(vkd, device, &const_vertices);
         errdefer vkd.destroyBuffer(device, vertex_buffer, allocation_callbacks);
         vulkanLog("created vertex buffer", .{});
 
@@ -641,11 +641,11 @@ pub const Ctx = struct {
         vulkanLog("bound vertex buffer memory", .{});
 
         {
-            const mapped_ptr = try vkd.mapMemory(device, vertex_buffer_memory, 0, @sizeOf(@TypeOf(vertices)), .{});
+            const mapped_ptr = try vkd.mapMemory(device, vertex_buffer_memory, 0, @sizeOf(@TypeOf(const_vertices)), .{});
             defer vkd.unmapMemory(device, vertex_buffer_memory);
 
             const gpu_ptr: [*]Vertex = @ptrCast(@alignCast(mapped_ptr));
-            @memcpy(gpu_ptr, &vertices);
+            @memcpy(gpu_ptr, &const_vertices);
             vulkanLog("copied vertices to mapped memory", .{});
         }
 
@@ -788,7 +788,7 @@ pub const Ctx = struct {
             self.swapchain.extent,
             self.graphics_pipeline.handle,
             self.vertex_buffer,
-            3,
+            const_vertices.len,
         );
 
         const wait_semaphores = [_]vk.Semaphore{self.sync.image_available_semaphores[self.current_frame]};
