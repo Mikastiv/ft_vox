@@ -87,6 +87,9 @@ const DeviceFunctions = vk.DeviceWrapper(.{
     .allocateMemory = true,
     .freeMemory = true,
     .bindBufferMemory = true,
+    .mapMemory = true,
+    .unmapMemory = true,
+    .cmdBindVertexBuffers = true,
 });
 
 const QueueFamiliesIndices = struct {
@@ -632,7 +635,19 @@ pub const Ctx = struct {
             .memory_type_index = memory_type_index,
         };
         const vertex_buffer_memory = try vkd.allocateMemory(device, &alloc_info, allocation_callbacks);
+        vulkanLog("allocated vertex buffer memory", .{});
+
         try vkd.bindBufferMemory(device, vertex_buffer, vertex_buffer_memory, 0);
+        vulkanLog("bound vertex buffer memory", .{});
+
+        {
+            const mapped_ptr = try vkd.mapMemory(device, vertex_buffer_memory, 0, @sizeOf(@TypeOf(vertices)), .{});
+            defer vkd.unmapMemory(device, vertex_buffer_memory);
+
+            const gpu_ptr: [*]Vertex = @ptrCast(@alignCast(mapped_ptr));
+            @memcpy(gpu_ptr, &vertices);
+            vulkanLog("copied vertices to mapped memory", .{});
+        }
 
         const vertex_shader = try createShaderModule(vkd, allocator, device, "vert.spv");
         errdefer vkd.destroyShaderModule(device, vertex_shader, allocation_callbacks);
@@ -772,6 +787,8 @@ pub const Ctx = struct {
             self.framebuffers.handles[index],
             self.swapchain.extent,
             self.graphics_pipeline.handle,
+            self.vertex_buffer,
+            3,
         );
 
         const wait_semaphores = [_]vk.Semaphore{self.sync.image_available_semaphores[self.current_frame]};
@@ -879,6 +896,8 @@ fn recordCommandBuffer(
     framebuffer: vk.Framebuffer,
     extent: vk.Extent2D,
     graphics_pipeline: vk.Pipeline,
+    vertex_buffer: vk.Buffer,
+    vertex_count: u32,
 ) !void {
     const begin_info = vk.CommandBufferBeginInfo{
         .flags = .{},
@@ -916,6 +935,10 @@ fn recordCommandBuffer(
     };
     vkd.cmdSetViewport(command_buffer, 0, viewports.len, &viewports);
 
+    const vertex_buffers = [_]vk.Buffer{vertex_buffer};
+    const offsets = [_]vk.DeviceSize{0};
+    vkd.cmdBindVertexBuffers(command_buffer, 0, 1, &vertex_buffers, &offsets);
+
     const scissors = [_]vk.Rect2D{
         .{
             .offset = .{ .x = 0, .y = 0 },
@@ -924,7 +947,7 @@ fn recordCommandBuffer(
     };
     vkd.cmdSetScissor(command_buffer, 0, scissors.len, &scissors);
 
-    vkd.cmdDraw(command_buffer, 3, 1, 0, 0);
+    vkd.cmdDraw(command_buffer, vertex_count, 1, 0, 0);
     vkd.cmdEndRenderPass(command_buffer);
 
     try vkd.endCommandBuffer(command_buffer);
