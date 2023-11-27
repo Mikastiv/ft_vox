@@ -2,6 +2,7 @@ const std = @import("std");
 const vk = @import("vulkan");
 const glfw = @import("glfw");
 const builtin = @import("builtin");
+const Vertex = @import("Vertex.zig");
 
 const Allocator = std.mem.Allocator;
 
@@ -80,6 +81,12 @@ const DeviceFunctions = vk.DeviceWrapper(.{
     .queueSubmit = true,
     .queuePresentKHR = true,
     .deviceWaitIdle = true,
+    .createBuffer = true,
+    .destroyBuffer = true,
+    .getBufferMemoryRequirements = true,
+    .allocateMemory = true,
+    .freeMemory = true,
+    .bindBufferMemory = true,
 });
 
 const QueueFamiliesIndices = struct {
@@ -283,11 +290,13 @@ const GraphicsPipeline = struct {
             .p_dynamic_states = &dynamic_states,
         };
 
+        const bindingDesscriptions = Vertex.bindingDescriptions();
+        const attributeDescriptions = Vertex.attributeDescriptions();
         const vertex_input_create_info = vk.PipelineVertexInputStateCreateInfo{
-            .vertex_binding_description_count = 0,
-            .p_vertex_binding_descriptions = null,
-            .vertex_attribute_description_count = 0,
-            .p_vertex_attribute_descriptions = null,
+            .vertex_binding_description_count = bindingDesscriptions.len,
+            .p_vertex_binding_descriptions = @ptrCast(&bindingDesscriptions),
+            .vertex_attribute_description_count = attributeDescriptions.len,
+            .p_vertex_attribute_descriptions = @ptrCast(&attributeDescriptions),
         };
 
         const input_assembly_create_info = vk.PipelineInputAssemblyStateCreateInfo{
@@ -542,6 +551,8 @@ pub const Ctx = struct {
     compute_queue: vk.Queue,
     transfer_queue: vk.Queue,
     swapchain: Swapchain,
+    vertex_buffer: vk.Buffer,
+    vertex_buffer_memory: vk.DeviceMemory,
     vertex_shader: vk.ShaderModule,
     fragment_shader: vk.ShaderModule,
     render_pass: vk.RenderPass,
@@ -599,6 +610,30 @@ pub const Ctx = struct {
         vulkanLog("selected extent {d}x{d}", .{ swapchain.extent.width, swapchain.extent.height });
         vulkanLog("framebuffer count {d}", .{swapchain.images.len});
 
+        const vertices = [_]Vertex{
+            .{ .pos = .{ 0.0, -0.5 }, .color = .{ 1.0, 0.0, 0.0 } },
+            .{ .pos = .{ 0.5, 0.5 }, .color = .{ 0.0, 1.0, 0.0 } },
+            .{ .pos = .{ -0.5, 0.5 }, .color = .{ 0.0, 0.0, 1.0 } },
+        };
+
+        const vertex_buffer = try createVertexBuffer(vkd, device, &vertices);
+        errdefer vkd.destroyBuffer(device, vertex_buffer, allocation_callbacks);
+        vulkanLog("created vertex buffer", .{});
+
+        const memory_requirements = vkd.getBufferMemoryRequirements(device, vertex_buffer);
+        const memory_type_index = findMemoryType(
+            &physical_device,
+            memory_requirements.memory_type_bits,
+            .{ .host_visible_bit = true, .host_coherent_bit = true },
+        ) orelse return error.RequiredMemoryTypeUnsupported;
+
+        const alloc_info = vk.MemoryAllocateInfo{
+            .allocation_size = memory_requirements.size,
+            .memory_type_index = memory_type_index,
+        };
+        const vertex_buffer_memory = try vkd.allocateMemory(device, &alloc_info, allocation_callbacks);
+        try vkd.bindBufferMemory(device, vertex_buffer, vertex_buffer_memory, 0);
+
         const vertex_shader = try createShaderModule(vkd, allocator, device, "vert.spv");
         errdefer vkd.destroyShaderModule(device, vertex_shader, allocation_callbacks);
         vulkanLog("loaded vertex shader", .{});
@@ -650,6 +685,8 @@ pub const Ctx = struct {
             .compute_queue = compute_queue,
             .transfer_queue = transfer_queue,
             .swapchain = swapchain,
+            .vertex_buffer = vertex_buffer,
+            .vertex_buffer_memory = vertex_buffer_memory,
             .vertex_shader = vertex_shader,
             .fragment_shader = fragment_shader,
             .render_pass = render_pass,
@@ -683,6 +720,12 @@ pub const Ctx = struct {
 
         self.vkd.destroyShaderModule(self.device, self.vertex_shader, allocation_callbacks);
         vulkanLog("vertex shader destroyed", .{});
+
+        self.vkd.freeMemory(self.device, self.vertex_buffer_memory, allocation_callbacks);
+        vulkanLog("freed vertex buffer memory", .{});
+
+        self.vkd.destroyBuffer(self.device, self.vertex_buffer, allocation_callbacks);
+        vulkanLog("vertex buffer destroyed", .{});
 
         self.swapchain.deinit();
         vulkanLog("swapchain destroyed", .{});
@@ -789,6 +832,35 @@ pub const Ctx = struct {
         try self.framebuffers.recreate(&self.swapchain, self.render_pass);
     }
 };
+
+fn findMemoryType(
+    physical_device: *const PhysicalDevice,
+    type_filter: u32,
+    properties: vk.MemoryPropertyFlags,
+) ?u32 {
+    const memory_properties = physical_device.memory_properties;
+    for (0..memory_properties.memory_type_count) |i| {
+        const memory_type = memory_properties.memory_types[i];
+        const property_flags = memory_type.property_flags;
+        if (type_filter & (@as(u32, 1) << @intCast(i)) != 0 and property_flags.contains(properties)) {
+            return @intCast(i);
+        }
+    }
+
+    return null;
+}
+
+fn createVertexBuffer(vkd: DeviceFunctions, device: vk.Device, vertices: []const Vertex) !vk.Buffer {
+    const buffer_create_info = vk.BufferCreateInfo{
+        .size = @sizeOf(@TypeOf(vertices[0])) * vertices.len,
+        .usage = .{
+            .vertex_buffer_bit = true,
+        },
+        .sharing_mode = .exclusive,
+    };
+
+    return vkd.createBuffer(device, &buffer_create_info, allocation_callbacks);
+}
 
 fn framebufferSizeCallback(window: glfw.Window, _: u32, _: u32) void {
     var ctx = window.getUserPointer(Ctx);
