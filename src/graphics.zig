@@ -142,6 +142,10 @@ const PhysicalDevice = struct {
             .transfer_family = queue_families.transfer_family.?,
         };
     }
+
+    fn hasUniqueTransferQueue(self: *const Self) bool {
+        return self.transfer_family != self.graphics_family or self.transfer_family != self.compute_family;
+    }
 };
 
 const Swapchain = struct {
@@ -569,6 +573,7 @@ pub const Ctx = struct {
     framebuffers: Framebuffers,
     command_pool: vk.CommandPool,
     command_buffers: [max_frames_in_flight]vk.CommandBuffer,
+    transfer_command_pool: vk.CommandPool,
     sync: Sync,
     current_frame: u32 = 0,
     framebuffer_resized: bool = false,
@@ -619,7 +624,15 @@ pub const Ctx = struct {
         vulkanLog("selected extent {d}x{d}", .{ swapchain.extent.width, swapchain.extent.height });
         vulkanLog("framebuffer count {d}", .{swapchain.images.len});
 
-        const vertex_buffer = try createVertexBuffer(vkd, device, &const_vertices);
+        var queue_family_indices = [_]u32{
+            physical_device.graphics_family,
+            physical_device.transfer_family,
+        };
+        const queue_families = if (physical_device.hasUniqueTransferQueue())
+            &queue_family_indices
+        else
+            queue_family_indices[0..1];
+        const vertex_buffer = try createVertexBuffer(vkd, device, &const_vertices, queue_families);
         errdefer vkd.destroyBuffer(device, vertex_buffer, allocation_callbacks);
         vulkanLog("created vertex buffer", .{});
 
@@ -682,6 +695,10 @@ pub const Ctx = struct {
         const command_buffers = try createCommandBuffers(vkd, device, command_pool);
         vulkanLog("command buffer created", .{});
 
+        const transfer_command_pool = try createCommandPool(vkd, device, physical_device.transfer_family);
+        errdefer vkd.destroyCommandPool(device, transfer_command_pool, allocation_callbacks);
+        vulkanLog("transfer command pool created", .{});
+
         const sync = try Sync.init(vkd, device);
         errdefer sync.deinit();
         vulkanLog("sync objects created", .{});
@@ -709,6 +726,7 @@ pub const Ctx = struct {
             .framebuffers = framebuffers,
             .command_pool = command_pool,
             .command_buffers = command_buffers,
+            .transfer_command_pool = transfer_command_pool,
             .sync = sync,
             .debug_messenger = debug_messenger,
         };
@@ -717,6 +735,9 @@ pub const Ctx = struct {
     pub fn deinit(self: *Self) void {
         self.sync.deinit();
         vulkanLog("sync objects destroyed", .{});
+
+        self.vkd.destroyCommandPool(self.device, self.transfer_command_pool, allocation_callbacks);
+        vulkanLog("transfer command pool destroyed", .{});
 
         self.vkd.destroyCommandPool(self.device, self.command_pool, allocation_callbacks);
         vulkanLog("command pool destroyed", .{});
@@ -867,13 +888,16 @@ fn findMemoryType(
     return null;
 }
 
-fn createVertexBuffer(vkd: DeviceFunctions, device: vk.Device, vertices: []const Vertex) !vk.Buffer {
+fn createVertexBuffer(vkd: DeviceFunctions, device: vk.Device, vertices: []const Vertex, queues: []const u32) !vk.Buffer {
+    const multiple_queues = queues.len > 1;
     const buffer_create_info = vk.BufferCreateInfo{
         .size = @sizeOf(@TypeOf(vertices[0])) * vertices.len,
         .usage = .{
             .vertex_buffer_bit = true,
         },
-        .sharing_mode = .exclusive,
+        .sharing_mode = if (multiple_queues) .concurrent else .exclusive,
+        .queue_family_index_count = @intCast(queues.len),
+        .p_queue_family_indices = @ptrCast(queues.ptr),
     };
 
     return vkd.createBuffer(device, &buffer_create_info, allocation_callbacks);
