@@ -75,6 +75,7 @@ const DeviceFunctions = vk.DeviceWrapper(.{
     .cmdBindPipeline = true,
     .cmdSetViewport = true,
     .cmdSetScissor = true,
+    .cmdCopyBuffer = true,
     .cmdDraw = true,
     .createSemaphore = true,
     .destroySemaphore = true,
@@ -96,6 +97,8 @@ const DeviceFunctions = vk.DeviceWrapper(.{
     .mapMemory = true,
     .unmapMemory = true,
     .cmdBindVertexBuffers = true,
+    .freeCommandBuffers = true,
+    .queueWaitIdle = true,
 });
 
 const QueueFamiliesIndices = struct {
@@ -565,7 +568,6 @@ pub const Ctx = struct {
     transfer_queue: vk.Queue,
     swapchain: Swapchain,
     vertex_buffer: VulkanBuffer,
-    staging_buffer: VulkanBuffer,
     vertex_shader: vk.ShaderModule,
     fragment_shader: vk.ShaderModule,
     render_pass: vk.RenderPass,
@@ -624,21 +626,6 @@ pub const Ctx = struct {
         vulkanLog("selected extent {d}x{d}", .{ swapchain.extent.width, swapchain.extent.height });
         vulkanLog("framebuffer count {d}", .{swapchain.images.len});
 
-        var queue_family_indices = [_]u32{
-            physical_device.graphics_family,
-            physical_device.transfer_family,
-        };
-        const queue_families = if (physical_device.hasUniqueTransferQueue())
-            &queue_family_indices
-        else
-            queue_family_indices[0..1];
-        const vertex_buffers = try createVertexBuffer(vkd, device, &physical_device, &const_vertices, queue_families);
-        const vertex_buffer = vertex_buffers.buffer;
-        const staging_buffer = vertex_buffers.staging_buffer;
-        errdefer vkd.destroyBuffer(device, vertex_buffer.handle, allocation_callbacks);
-        errdefer vkd.freeMemory(device, vertex_buffer.memory, allocation_callbacks);
-        vulkanLog("created vertex buffer", .{});
-
         const vertex_shader = try createShaderModule(vkd, allocator, device, "vert.spv");
         errdefer vkd.destroyShaderModule(device, vertex_shader, allocation_callbacks);
         vulkanLog("loaded vertex shader", .{});
@@ -676,6 +663,27 @@ pub const Ctx = struct {
         errdefer vkd.destroyCommandPool(device, transfer_command_pool, allocation_callbacks);
         vulkanLog("transfer command pool created", .{});
 
+        var queue_family_indices = [_]u32{
+            physical_device.graphics_family,
+            physical_device.transfer_family,
+        };
+        const queue_families = if (physical_device.hasUniqueTransferQueue())
+            &queue_family_indices
+        else
+            queue_family_indices[0..1];
+        const vertex_buffer = try createVertexBuffer(
+            vkd,
+            device,
+            &physical_device,
+            &const_vertices,
+            queue_families,
+            transfer_command_pool,
+            transfer_queue,
+        );
+        errdefer vkd.destroyBuffer(device, vertex_buffer.handle, allocation_callbacks);
+        errdefer vkd.freeMemory(device, vertex_buffer.memory, allocation_callbacks);
+        vulkanLog("created vertex buffer", .{});
+
         const sync = try Sync.init(vkd, device);
         errdefer sync.deinit();
         vulkanLog("sync objects created", .{});
@@ -695,7 +703,6 @@ pub const Ctx = struct {
             .transfer_queue = transfer_queue,
             .swapchain = swapchain,
             .vertex_buffer = vertex_buffer,
-            .staging_buffer = staging_buffer,
             .vertex_shader = vertex_shader,
             .fragment_shader = fragment_shader,
             .render_pass = render_pass,
@@ -735,11 +742,9 @@ pub const Ctx = struct {
         vulkanLog("vertex shader destroyed", .{});
 
         self.vkd.freeMemory(self.device, self.vertex_buffer.memory, allocation_callbacks);
-        self.vkd.freeMemory(self.device, self.staging_buffer.memory, allocation_callbacks);
         vulkanLog("freed vertex buffer memory", .{});
 
         self.vkd.destroyBuffer(self.device, self.vertex_buffer.handle, allocation_callbacks);
-        self.vkd.destroyBuffer(self.device, self.staging_buffer.handle, allocation_callbacks);
         vulkanLog("vertex buffer destroyed", .{});
 
         self.swapchain.deinit();
@@ -872,6 +877,54 @@ const VulkanBuffer = struct {
     memory: vk.DeviceMemory,
 };
 
+fn copyBuffer(
+    vkd: DeviceFunctions,
+    device: vk.Device,
+    src: vk.Buffer,
+    dst: vk.Buffer,
+    size: vk.DeviceSize,
+    pool: vk.CommandPool,
+    queue: vk.Queue,
+) !void {
+    const alloc_info = vk.CommandBufferAllocateInfo{
+        .level = .primary,
+        .command_pool = pool,
+        .command_buffer_count = 1,
+    };
+
+    var command_buffer: vk.CommandBuffer = undefined;
+    try vkd.allocateCommandBuffers(device, &alloc_info, @ptrCast(&command_buffer));
+
+    const begin_info = vk.CommandBufferBeginInfo{
+        .flags = .{ .one_time_submit_bit = true },
+    };
+
+    try vkd.beginCommandBuffer(command_buffer, &begin_info);
+
+    const copy_regions = [_]vk.BufferCopy{
+        .{
+            .src_offset = 0,
+            .dst_offset = 0,
+            .size = size,
+        },
+    };
+    vkd.cmdCopyBuffer(command_buffer, src, dst, copy_regions.len, &copy_regions);
+
+    try vkd.endCommandBuffer(command_buffer);
+
+    const submit_infos = [_]vk.SubmitInfo{
+        .{
+            .command_buffer_count = 1,
+            .p_command_buffers = @ptrCast(&command_buffer),
+        },
+    };
+
+    try vkd.queueSubmit(queue, submit_infos.len, &submit_infos, vk.Fence.null_handle);
+    try vkd.queueWaitIdle(queue);
+
+    vkd.freeCommandBuffers(device, pool, 1, @ptrCast(&command_buffer));
+}
+
 fn createBuffer(
     vkd: DeviceFunctions,
     device: vk.Device,
@@ -921,7 +974,9 @@ fn createVertexBuffer(
     physical_device: *const PhysicalDevice,
     vertices: []const Vertex,
     queues: []const u32,
-) !struct { staging_buffer: VulkanBuffer, buffer: VulkanBuffer } {
+    pool: vk.CommandPool,
+    transfer_queue: vk.Queue,
+) !VulkanBuffer {
     const size = @sizeOf(@TypeOf(vertices[0])) * vertices.len;
 
     const staging_buffer = try createBuffer(
@@ -933,6 +988,8 @@ fn createVertexBuffer(
         .{ .host_visible_bit = true, .host_coherent_bit = true },
         queues,
     );
+    errdefer vkd.destroyBuffer(device, staging_buffer.handle, allocation_callbacks);
+    errdefer vkd.freeMemory(device, staging_buffer.memory, allocation_callbacks);
 
     {
         const mapped_ptr = try vkd.mapMemory(device, staging_buffer.memory, 0, size, .{});
@@ -952,8 +1009,15 @@ fn createVertexBuffer(
         .{ .host_visible_bit = true, .host_coherent_bit = true },
         queues,
     );
+    errdefer vkd.destroyBuffer(device, buffer.handle, allocation_callbacks);
+    errdefer vkd.freeMemory(device, buffer.memory, allocation_callbacks);
 
-    return .{ .staging_buffer = staging_buffer, .buffer = buffer };
+    try copyBuffer(vkd, device, staging_buffer.handle, buffer.handle, size, pool, transfer_queue);
+
+    vkd.destroyBuffer(device, staging_buffer.handle, allocation_callbacks);
+    vkd.freeMemory(device, staging_buffer.memory, allocation_callbacks);
+
+    return buffer;
 }
 
 fn framebufferSizeCallback(window: glfw.Window, _: u32, _: u32) void {
