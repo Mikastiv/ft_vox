@@ -10,10 +10,13 @@ const shader_byte_code_align = 4;
 const max_frames_in_flight = 2;
 
 const const_vertices = [_]Vertex{
-    .{ .pos = .{ 0.0, -0.5 }, .color = .{ 1.0, 1.0, 1.0 } },
-    .{ .pos = .{ 0.5, 0.5 }, .color = .{ 0.0, 1.0, 0.0 } },
-    .{ .pos = .{ -0.5, 0.5 }, .color = .{ 0.0, 0.0, 1.0 } },
+    .{ .pos = .{ -0.5, -0.5 }, .color = .{ 1.0, 0.0, 0.0 } },
+    .{ .pos = .{ 0.5, -0.5 }, .color = .{ 0.0, 1.0, 0.0 } },
+    .{ .pos = .{ 0.5, 0.5 }, .color = .{ 0.0, 0.0, 1.0 } },
+    .{ .pos = .{ -0.5, 0.5 }, .color = .{ 1.0, 1.0, 1.0 } },
 };
+
+const const_indices = [_]u16{ 0, 1, 2, 2, 3, 0 };
 
 const enable_validation = std.debug.runtime_safety;
 const validation_layers = [_][*:0]const u8{"VK_LAYER_KHRONOS_validation"};
@@ -77,6 +80,7 @@ const DeviceFunctions = vk.DeviceWrapper(.{
     .cmdSetScissor = true,
     .cmdCopyBuffer = true,
     .cmdDraw = true,
+    .cmdDrawIndexed = true,
     .createSemaphore = true,
     .destroySemaphore = true,
     .createFence = true,
@@ -97,6 +101,7 @@ const DeviceFunctions = vk.DeviceWrapper(.{
     .mapMemory = true,
     .unmapMemory = true,
     .cmdBindVertexBuffers = true,
+    .cmdBindIndexBuffer = true,
     .freeCommandBuffers = true,
     .queueWaitIdle = true,
 });
@@ -568,6 +573,7 @@ pub const Ctx = struct {
     transfer_queue: vk.Queue,
     swapchain: Swapchain,
     vertex_buffer: VulkanBuffer,
+    index_buffer: VulkanBuffer,
     vertex_shader: vk.ShaderModule,
     fragment_shader: vk.ShaderModule,
     render_pass: vk.RenderPass,
@@ -684,6 +690,19 @@ pub const Ctx = struct {
         errdefer vkd.freeMemory(device, vertex_buffer.memory, allocation_callbacks);
         vulkanLog("created vertex buffer", .{});
 
+        const index_buffer = try createIndexBuffer(
+            vkd,
+            device,
+            &physical_device,
+            &const_indices,
+            queue_families,
+            transfer_command_pool,
+            transfer_queue,
+        );
+        errdefer vkd.destroyBuffer(device, index_buffer.handle, allocation_callbacks);
+        errdefer vkd.freeMemory(device, index_buffer.memory, allocation_callbacks);
+        vulkanLog("created index buffer", .{});
+
         const sync = try Sync.init(vkd, device);
         errdefer sync.deinit();
         vulkanLog("sync objects created", .{});
@@ -703,6 +722,7 @@ pub const Ctx = struct {
             .transfer_queue = transfer_queue,
             .swapchain = swapchain,
             .vertex_buffer = vertex_buffer,
+            .index_buffer = index_buffer,
             .vertex_shader = vertex_shader,
             .fragment_shader = fragment_shader,
             .render_pass = render_pass,
@@ -719,6 +739,18 @@ pub const Ctx = struct {
     pub fn deinit(self: *Self) void {
         self.sync.deinit();
         vulkanLog("sync objects destroyed", .{});
+
+        self.vkd.freeMemory(self.device, self.index_buffer.memory, allocation_callbacks);
+        vulkanLog("freed index buffer memory", .{});
+
+        self.vkd.destroyBuffer(self.device, self.index_buffer.handle, allocation_callbacks);
+        vulkanLog("index buffer destroyed", .{});
+
+        self.vkd.freeMemory(self.device, self.vertex_buffer.memory, allocation_callbacks);
+        vulkanLog("freed vertex buffer memory", .{});
+
+        self.vkd.destroyBuffer(self.device, self.vertex_buffer.handle, allocation_callbacks);
+        vulkanLog("vertex buffer destroyed", .{});
 
         self.vkd.destroyCommandPool(self.device, self.transfer_command_pool, allocation_callbacks);
         vulkanLog("transfer command pool destroyed", .{});
@@ -740,12 +772,6 @@ pub const Ctx = struct {
 
         self.vkd.destroyShaderModule(self.device, self.vertex_shader, allocation_callbacks);
         vulkanLog("vertex shader destroyed", .{});
-
-        self.vkd.freeMemory(self.device, self.vertex_buffer.memory, allocation_callbacks);
-        vulkanLog("freed vertex buffer memory", .{});
-
-        self.vkd.destroyBuffer(self.device, self.vertex_buffer.handle, allocation_callbacks);
-        vulkanLog("vertex buffer destroyed", .{});
 
         self.swapchain.deinit();
         vulkanLog("swapchain destroyed", .{});
@@ -793,7 +819,8 @@ pub const Ctx = struct {
             self.swapchain.extent,
             self.graphics_pipeline.handle,
             self.vertex_buffer.handle,
-            const_vertices.len,
+            self.index_buffer.handle,
+            const_indices.len,
         );
 
         const wait_semaphores = [_]vk.Semaphore{self.sync.image_available_semaphores[self.current_frame]};
@@ -1020,6 +1047,58 @@ fn createVertexBuffer(
     return buffer;
 }
 
+fn createIndexBuffer(
+    vkd: DeviceFunctions,
+    device: vk.Device,
+    physical_device: *const PhysicalDevice,
+    indices: []const u16,
+    queues: []const u32,
+    pool: vk.CommandPool,
+    transfer_queue: vk.Queue,
+) !VulkanBuffer {
+    const size = @sizeOf(@TypeOf(indices[0])) * indices.len;
+
+    const staging_buffer = try createBuffer(
+        vkd,
+        device,
+        physical_device,
+        size,
+        .{ .transfer_src_bit = true },
+        .{ .host_visible_bit = true, .host_coherent_bit = true },
+        queues,
+    );
+    errdefer vkd.destroyBuffer(device, staging_buffer.handle, allocation_callbacks);
+    errdefer vkd.freeMemory(device, staging_buffer.memory, allocation_callbacks);
+
+    {
+        const mapped_ptr = try vkd.mapMemory(device, staging_buffer.memory, 0, size, .{});
+        defer vkd.unmapMemory(device, staging_buffer.memory);
+
+        const gpu_ptr: [*]u16 = @ptrCast(@alignCast(mapped_ptr));
+        @memcpy(gpu_ptr, indices);
+        vulkanLog("copied vertices to mapped memory", .{});
+    }
+
+    const buffer = try createBuffer(
+        vkd,
+        device,
+        physical_device,
+        size,
+        .{ .transfer_dst_bit = true, .index_buffer_bit = true },
+        .{ .host_visible_bit = true, .host_coherent_bit = true },
+        queues,
+    );
+    errdefer vkd.destroyBuffer(device, buffer.handle, allocation_callbacks);
+    errdefer vkd.freeMemory(device, buffer.memory, allocation_callbacks);
+
+    try copyBuffer(vkd, device, staging_buffer.handle, buffer.handle, size, pool, transfer_queue);
+
+    vkd.destroyBuffer(device, staging_buffer.handle, allocation_callbacks);
+    vkd.freeMemory(device, staging_buffer.memory, allocation_callbacks);
+
+    return buffer;
+}
+
 fn framebufferSizeCallback(window: glfw.Window, _: u32, _: u32) void {
     var ctx = window.getUserPointer(Ctx);
     if (ctx == null) {
@@ -1038,7 +1117,8 @@ fn recordCommandBuffer(
     extent: vk.Extent2D,
     graphics_pipeline: vk.Pipeline,
     vertex_buffer: vk.Buffer,
-    vertex_count: u32,
+    index_buffer: vk.Buffer,
+    index_count: u32,
 ) !void {
     const begin_info = vk.CommandBufferBeginInfo{
         .flags = .{},
@@ -1080,6 +1160,8 @@ fn recordCommandBuffer(
     const offsets = [_]vk.DeviceSize{0};
     vkd.cmdBindVertexBuffers(command_buffer, 0, 1, &vertex_buffers, &offsets);
 
+    vkd.cmdBindIndexBuffer(command_buffer, index_buffer, 0, .uint16);
+
     const scissors = [_]vk.Rect2D{
         .{
             .offset = .{ .x = 0, .y = 0 },
@@ -1088,7 +1170,7 @@ fn recordCommandBuffer(
     };
     vkd.cmdSetScissor(command_buffer, 0, scissors.len, &scissors);
 
-    vkd.cmdDraw(command_buffer, vertex_count, 1, 0, 0);
+    vkd.cmdDrawIndexed(command_buffer, index_count, 1, 0, 0, 0);
     vkd.cmdEndRenderPass(command_buffer);
 
     try vkd.endCommandBuffer(command_buffer);
