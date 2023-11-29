@@ -565,6 +565,7 @@ pub const Ctx = struct {
     transfer_queue: vk.Queue,
     swapchain: Swapchain,
     vertex_buffer: VulkanBuffer,
+    staging_buffer: VulkanBuffer,
     vertex_shader: vk.ShaderModule,
     fragment_shader: vk.ShaderModule,
     render_pass: vk.RenderPass,
@@ -631,7 +632,9 @@ pub const Ctx = struct {
             &queue_family_indices
         else
             queue_family_indices[0..1];
-        const vertex_buffer = try createVertexBuffer(vkd, device, &physical_device, &const_vertices, queue_families);
+        const vertex_buffers = try createVertexBuffer(vkd, device, &physical_device, &const_vertices, queue_families);
+        const vertex_buffer = vertex_buffers.buffer;
+        const staging_buffer = vertex_buffers.staging_buffer;
         errdefer vkd.destroyBuffer(device, vertex_buffer.handle, allocation_callbacks);
         errdefer vkd.freeMemory(device, vertex_buffer.memory, allocation_callbacks);
         vulkanLog("created vertex buffer", .{});
@@ -692,6 +695,7 @@ pub const Ctx = struct {
             .transfer_queue = transfer_queue,
             .swapchain = swapchain,
             .vertex_buffer = vertex_buffer,
+            .staging_buffer = staging_buffer,
             .vertex_shader = vertex_shader,
             .fragment_shader = fragment_shader,
             .render_pass = render_pass,
@@ -731,9 +735,11 @@ pub const Ctx = struct {
         vulkanLog("vertex shader destroyed", .{});
 
         self.vkd.freeMemory(self.device, self.vertex_buffer.memory, allocation_callbacks);
+        self.vkd.freeMemory(self.device, self.staging_buffer.memory, allocation_callbacks);
         vulkanLog("freed vertex buffer memory", .{});
 
         self.vkd.destroyBuffer(self.device, self.vertex_buffer.handle, allocation_callbacks);
+        self.vkd.destroyBuffer(self.device, self.staging_buffer.handle, allocation_callbacks);
         vulkanLog("vertex buffer destroyed", .{});
 
         self.swapchain.deinit();
@@ -915,28 +921,39 @@ fn createVertexBuffer(
     physical_device: *const PhysicalDevice,
     vertices: []const Vertex,
     queues: []const u32,
-) !VulkanBuffer {
+) !struct { staging_buffer: VulkanBuffer, buffer: VulkanBuffer } {
     const size = @sizeOf(@TypeOf(vertices[0])) * vertices.len;
-    const buffer = try createBuffer(
+
+    const staging_buffer = try createBuffer(
         vkd,
         device,
         physical_device,
         size,
-        .{ .vertex_buffer_bit = true },
+        .{ .transfer_src_bit = true },
         .{ .host_visible_bit = true, .host_coherent_bit = true },
         queues,
     );
 
     {
-        const mapped_ptr = try vkd.mapMemory(device, buffer.memory, 0, @sizeOf(@TypeOf(const_vertices)), .{});
-        defer vkd.unmapMemory(device, buffer.memory);
+        const mapped_ptr = try vkd.mapMemory(device, staging_buffer.memory, 0, size, .{});
+        defer vkd.unmapMemory(device, staging_buffer.memory);
 
         const gpu_ptr: [*]Vertex = @ptrCast(@alignCast(mapped_ptr));
-        @memcpy(gpu_ptr, &const_vertices);
+        @memcpy(gpu_ptr, vertices);
         vulkanLog("copied vertices to mapped memory", .{});
     }
 
-    return buffer;
+    const buffer = try createBuffer(
+        vkd,
+        device,
+        physical_device,
+        size,
+        .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
+        .{ .host_visible_bit = true, .host_coherent_bit = true },
+        queues,
+    );
+
+    return .{ .staging_buffer = staging_buffer, .buffer = buffer };
 }
 
 fn framebufferSizeCallback(window: glfw.Window, _: u32, _: u32) void {
