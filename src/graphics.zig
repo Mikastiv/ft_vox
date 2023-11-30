@@ -1076,7 +1076,7 @@ fn createIndexBuffer(
 
         const gpu_ptr: [*]u16 = @ptrCast(@alignCast(mapped_ptr));
         @memcpy(gpu_ptr, indices);
-        vulkanLog("copied vertices to mapped memory", .{});
+        vulkanLog("copied indices to mapped memory", .{});
     }
 
     const buffer = try createBuffer(
