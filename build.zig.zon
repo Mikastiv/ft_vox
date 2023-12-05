@@ -9,12 +9,12 @@
     },
     .dependencies = .{
         .vulkan_zig = .{
-            .url = "https://github.com/Snektron/vulkan-zig/archive/ed9401c72e999e269b3cc26ff2606895b41ed2e5.tar.gz",
-            .hash = "122044bdb044f78c2e638aecb56328241132f18c9000f9d0ceaefa0650be341f2ac0",
+            .url = "https://github.com/Snektron/vulkan-zig/archive/27d9b028ebedf616bc9bf49ba551bf33b3ff33a8.tar.gz",
+            .hash = "1220f9e64b39552cd4e7b7e23585daefcf82c4f37b998a1c80355b7a57ca6db79dbc",
         },
         .mach_glfw = .{
-            .url = "https://pkg.machengine.org/mach-glfw/20d247fa4b70c0b3951cb3c439d3466f204754e1.tar.gz",
-            .hash = "1220533928f944fe59f6dd2807db71cd69108cc810101e627835c3abcc4afea4fb06",
+            .url = "https://github.com/der-teufel-programming/mach-glfw/archive/577220552e1b31c4496d2e0df2fb5fbc9287b966.tar.gz",
+            .hash = "12204779ba2f14b46f569110f774d5c3f48b7a105b6717e668bc410710bceae62072",
         },
     },
 }

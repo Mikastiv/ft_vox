@@ -1351,7 +1351,7 @@ fn pickSwapSurfaceFormat(
     var format_count: u32 = 0;
     _ = try vki.getPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &format_count, null);
 
-    var surface_formats = try allocator.alloc(vk.SurfaceFormatKHR, format_count);
+    const surface_formats = try allocator.alloc(vk.SurfaceFormatKHR, format_count);
     defer allocator.free(surface_formats);
 
     _ = try vki.getPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &format_count, surface_formats.ptr);
@@ -1374,7 +1374,7 @@ fn pickSwapPresentMode(
     var present_mode_count: u32 = 0;
     _ = try vki.getPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &present_mode_count, null);
 
-    var present_modes = try allocator.alloc(vk.PresentModeKHR, present_mode_count);
+    const present_modes = try allocator.alloc(vk.PresentModeKHR, present_mode_count);
     defer allocator.free(present_modes);
 
     _ = try vki.getPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &present_mode_count, present_modes.ptr);
@@ -1544,7 +1544,7 @@ fn checkValidationLayerSupport(vkb: BaseFunctions, allocator: Allocator) !bool {
     var layer_count: u32 = 0;
     _ = try vkb.enumerateInstanceLayerProperties(&layer_count, null);
 
-    var layer_properties = try allocator.alloc(vk.LayerProperties, layer_count);
+    const layer_properties = try allocator.alloc(vk.LayerProperties, layer_count);
     defer allocator.free(layer_properties);
 
     _ = try vkb.enumerateInstanceLayerProperties(&layer_count, layer_properties.ptr);
@@ -1782,7 +1782,7 @@ fn findQueueFamilies(
     var family_count: u32 = 0;
     vki.getPhysicalDeviceQueueFamilyProperties(physical_device, &family_count, null);
 
-    var families = try allocator.alloc(vk.QueueFamilyProperties, family_count);
+    const families = try allocator.alloc(vk.QueueFamilyProperties, family_count);
     defer allocator.free(families);
 
     vki.getPhysicalDeviceQueueFamilyProperties(physical_device, &family_count, families.ptr);
@@ -1824,7 +1824,7 @@ fn loadShaderByteCode(allocator: Allocator, comptime file: []const u8) ![]align(
         return error.WrongShaderByteCodeAlignement;
     }
 
-    var byte_code = try allocator.alignedAlloc(u8, shader_byte_code_align, size);
+    const byte_code = try allocator.alignedAlloc(u8, shader_byte_code_align, size);
     errdefer allocator.free(byte_code);
 
     _ = try shader.readAll(byte_code);
