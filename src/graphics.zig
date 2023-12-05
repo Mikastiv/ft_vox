@@ -3,6 +3,7 @@ const vk = @import("vulkan");
 const glfw = @import("glfw");
 const builtin = @import("builtin");
 const Vertex = @import("Vertex.zig");
+const math = @import("math.zig");
 
 const Allocator = std.mem.Allocator;
 
@@ -17,6 +18,12 @@ const const_vertices = [_]Vertex{
 };
 
 const const_indices = [_]u16{ 0, 1, 2, 2, 3, 0 };
+
+const UniformBufferObject = struct {
+    model: math.Mat4,
+    view: math.Mat4,
+    proj: math.Mat4,
+};
 
 const enable_validation = std.debug.runtime_safety;
 const validation_layers = [_][*:0]const u8{"VK_LAYER_KHRONOS_validation"};
@@ -104,6 +111,8 @@ const DeviceFunctions = vk.DeviceWrapper(.{
     .cmdBindIndexBuffer = true,
     .freeCommandBuffers = true,
     .queueWaitIdle = true,
+    .createDescriptorSetLayout = true,
+    .destroyDescriptorSetLayout = true,
 });
 
 const QueueFamiliesIndices = struct {
@@ -289,6 +298,7 @@ const GraphicsPipeline = struct {
         vertex_shader: vk.ShaderModule,
         fragment_shader: vk.ShaderModule,
         render_pass: vk.RenderPass,
+        descriptor_set_layout: vk.DescriptorSetLayout,
     ) !Self {
         const vert_shader_stage_create_info = vk.PipelineShaderStageCreateInfo{
             .stage = .{ .vertex_bit = true },
@@ -373,8 +383,8 @@ const GraphicsPipeline = struct {
         };
 
         const pipeline_layout_create_info = vk.PipelineLayoutCreateInfo{
-            .set_layout_count = 0,
-            .p_set_layouts = null,
+            .set_layout_count = 1,
+            .p_set_layouts = @ptrCast(&descriptor_set_layout),
             .push_constant_range_count = 0,
             .p_push_constant_ranges = null,
         };
@@ -554,6 +564,14 @@ const Sync = struct {
     }
 };
 
+const UniformBuffer = struct {
+    handle: vk.Buffer,
+    memory: vk.DeviceMemory,
+    mapped_ptr: *anyopaque,
+};
+
+const UniformBufferArray = std.BoundedArray(UniformBuffer, max_frames_in_flight);
+
 pub const Ctx = struct {
     const Self = @This();
 
@@ -577,6 +595,7 @@ pub const Ctx = struct {
     vertex_shader: vk.ShaderModule,
     fragment_shader: vk.ShaderModule,
     render_pass: vk.RenderPass,
+    descriptor_set_layout: vk.DescriptorSetLayout,
     graphics_pipeline: GraphicsPipeline,
     framebuffers: Framebuffers,
     command_pool: vk.CommandPool,
@@ -585,6 +604,9 @@ pub const Ctx = struct {
     sync: Sync,
     current_frame: u32 = 0,
     framebuffer_resized: bool = false,
+    timer: std.time.Timer,
+
+    uniform_buffers: UniformBufferArray,
 
     debug_messenger: DebugMessenger,
 
@@ -644,12 +666,17 @@ pub const Ctx = struct {
         errdefer vkd.destroyRenderPass(device, render_pass, allocation_callbacks);
         vulkanLog("render pass created", .{});
 
+        const descriptor_set_layout = try createDescriptorSetLayout(vkd, device);
+        errdefer vkd.destroyDescriptorSetLayout(device, descriptor_set_layout, allocation_callbacks);
+        vulkanLog("descriptor set layout created", .{});
+
         var graphics_pipeline = try GraphicsPipeline.init(
             vkd,
             device,
             vertex_shader,
             fragment_shader,
             render_pass,
+            descriptor_set_layout,
         );
         errdefer graphics_pipeline.deinit();
         vulkanLog("graphics pipeline created", .{});
@@ -703,7 +730,15 @@ pub const Ctx = struct {
         errdefer vkd.freeMemory(device, index_buffer.memory, allocation_callbacks);
         vulkanLog("created index buffer", .{});
 
-        const sync = try Sync.init(vkd, device);
+        const uniform_buffer_queues = [_]u32{physical_device.graphics_family};
+        const uniform_buffers = try createUniformBuffers(
+            vkd,
+            device,
+            &physical_device,
+            &uniform_buffer_queues,
+        );
+
+        var sync = try Sync.init(vkd, device);
         errdefer sync.deinit();
         vulkanLog("sync objects created", .{});
 
@@ -726,6 +761,8 @@ pub const Ctx = struct {
             .vertex_shader = vertex_shader,
             .fragment_shader = fragment_shader,
             .render_pass = render_pass,
+            .uniform_buffers = uniform_buffers,
+            .descriptor_set_layout = descriptor_set_layout,
             .graphics_pipeline = graphics_pipeline,
             .framebuffers = framebuffers,
             .command_pool = command_pool,
@@ -733,6 +770,7 @@ pub const Ctx = struct {
             .transfer_command_pool = transfer_command_pool,
             .sync = sync,
             .debug_messenger = debug_messenger,
+            .timer = try std.time.Timer.start(),
         };
     }
 
@@ -775,6 +813,14 @@ pub const Ctx = struct {
 
         self.swapchain.deinit();
         vulkanLog("swapchain destroyed", .{});
+
+        for (self.uniform_buffers.slice()) |buffer| {
+            self.vkd.destroyBuffer(self.device, buffer.handle, allocation_callbacks);
+            self.vkd.freeMemory(self.device, buffer.memory, allocation_callbacks);
+        }
+
+        self.vkd.destroyDescriptorSetLayout(self.device, self.descriptor_set_layout, allocation_callbacks);
+        vulkanLog("descriptor set layout destroyed", .{});
 
         self.vkd.destroyDevice(self.device, allocation_callbacks);
         vulkanLog("device destroyed", .{});
@@ -822,6 +868,8 @@ pub const Ctx = struct {
             self.index_buffer.handle,
             const_indices.len,
         );
+
+        try self.updateUniformBuffer(self.current_frame);
 
         const wait_semaphores = [_]vk.Semaphore{self.sync.image_available_semaphores[self.current_frame]};
         const wait_stages = [_]vk.PipelineStageFlags{.{ .color_attachment_output_bit = true }};
@@ -880,7 +928,69 @@ pub const Ctx = struct {
         try self.swapchain.recreate();
         try self.framebuffers.recreate(&self.swapchain, self.render_pass);
     }
+
+    fn updateUniformBuffer(self: *Self, current_frame: u32) !void {
+        const time_ns = self.timer.lap();
+        const time = @as(f32, @floatFromInt(time_ns)) / std.time.ns_per_s;
+
+        const aspect_ratio = @as(f32, @floatFromInt(self.swapchain.extent.width)) /
+            @as(f32, @floatFromInt(self.swapchain.extent.height));
+
+        const ubo = UniformBufferObject{
+            .model = math.mat.rotation(time * std.math.degreesToRadians(f32, 90), .{ 0, 0, 1 }),
+            .view = math.mat.lookAt(.{ 2, 2, 2 }, .{ 0, 0, 0 }, .{ 0, 0, 1 }),
+            .proj = math.mat.perspective(std.math.degreesToRadians(f32, 45), aspect_ratio, 0.1, 10),
+        };
+
+        const gpu_ptr: *UniformBufferObject = @ptrCast(@alignCast(self.uniform_buffers.slice()[current_frame].mapped_ptr));
+        gpu_ptr.* = ubo;
+    }
 };
+
+fn createUniformBuffers(
+    vkd: DeviceFunctions,
+    device: vk.Device,
+    physical_device: *const PhysicalDevice,
+    queues: []const u32,
+) !UniformBufferArray {
+    const buffer_size = @sizeOf(UniformBufferObject);
+    var out = try UniformBufferArray.init(0);
+
+    for (0..out.capacity()) |_| {
+        const buffer = try createBuffer(
+            vkd,
+            device,
+            physical_device,
+            buffer_size,
+            .{ .uniform_buffer_bit = true },
+            .{ .host_visible_bit = true, .host_coherent_bit = true },
+            queues,
+        );
+        const mapped_ptr = try vkd.mapMemory(device, buffer.memory, 0, buffer_size, .{});
+
+        try out.append(.{ .handle = buffer.handle, .memory = buffer.memory, .mapped_ptr = mapped_ptr.? });
+    }
+
+    return out;
+}
+
+fn createDescriptorSetLayout(vkd: DeviceFunctions, device: vk.Device) !vk.DescriptorSetLayout {
+    const ubo_layout_bindings = [_]vk.DescriptorSetLayoutBinding{
+        .{
+            .binding = 0,
+            .descriptor_type = .uniform_buffer,
+            .descriptor_count = 1,
+            .stage_flags = .{ .vertex_bit = true },
+        },
+    };
+
+    const layout_info = vk.DescriptorSetLayoutCreateInfo{
+        .binding_count = ubo_layout_bindings.len,
+        .p_bindings = &ubo_layout_bindings,
+    };
+
+    return vkd.createDescriptorSetLayout(device, &layout_info, allocation_callbacks);
+}
 
 fn findMemoryType(
     physical_device: *const PhysicalDevice,
