@@ -20,9 +20,9 @@ const const_vertices = [_]Vertex{
 const const_indices = [_]u16{ 0, 1, 2, 2, 3, 0 };
 
 const UniformBufferObject = struct {
-    model: math.Mat4,
-    view: math.Mat4,
-    proj: math.Mat4,
+    model: math.Mat4 align(16),
+    view: math.Mat4 align(16),
+    proj: math.Mat4 align(16),
 };
 
 const enable_validation = std.debug.runtime_safety;
