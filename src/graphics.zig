@@ -121,14 +121,12 @@ const DeviceFunctions = vk.DeviceWrapper(.{
 });
 
 const QueueFamiliesIndices = struct {
-    const Self = @This();
-
     graphics_family: ?u32 = null,
     present_family: ?u32 = null,
     compute_family: ?u32 = null,
     transfer_family: ?u32 = null,
 
-    fn isComplete(self: Self) bool {
+    fn isComplete(self: @This()) bool {
         return self.graphics_family != null and
             self.present_family != null and
             self.compute_family != null and
@@ -137,8 +135,6 @@ const QueueFamiliesIndices = struct {
 };
 
 const PhysicalDevice = struct {
-    const Self = @This();
-
     handle: vk.PhysicalDevice,
     properties: vk.PhysicalDeviceProperties,
     memory_properties: vk.PhysicalDeviceMemoryProperties,
@@ -147,7 +143,7 @@ const PhysicalDevice = struct {
     compute_family: u32,
     transfer_family: u32,
 
-    fn init(vki: InstanceFunctions, allocator: Allocator, device: vk.PhysicalDevice, surface: vk.SurfaceKHR) !Self {
+    fn init(vki: InstanceFunctions, allocator: Allocator, device: vk.PhysicalDevice, surface: vk.SurfaceKHR) !@This() {
         const queue_families = try findQueueFamilies(vki, allocator, device, surface);
 
         if (!queue_families.isComplete()) {
@@ -165,14 +161,12 @@ const PhysicalDevice = struct {
         };
     }
 
-    fn hasUniqueTransferQueue(self: *const Self) bool {
+    fn hasUniqueTransferQueue(self: *const @This()) bool {
         return self.transfer_family != self.graphics_family or self.transfer_family != self.compute_family;
     }
 };
 
 const Swapchain = struct {
-    const Self = @This();
-
     vki: InstanceFunctions,
     vkd: DeviceFunctions,
     allocator: Allocator,
@@ -197,7 +191,7 @@ const Swapchain = struct {
         device: vk.Device,
         surface: vk.SurfaceKHR,
         window: glfw.Window,
-    ) !Self {
+    ) !@This() {
         const surface_format = try pickSwapSurfaceFormat(vki, allocator, physical_device.handle, surface);
         const present_mode = try pickSwapPresentMode(vki, allocator, physical_device.handle, surface);
         const surface_capabilities = try vki.getPhysicalDeviceSurfaceCapabilitiesKHR(physical_device.handle, surface);
@@ -239,7 +233,7 @@ const Swapchain = struct {
         };
     }
 
-    fn recreate(self: *Self) !void {
+    fn recreate(self: *@This()) !void {
         const surface_capabilities = try self.vki.getPhysicalDeviceSurfaceCapabilitiesKHR(self.physical_device.handle, self.surface);
         self.extent = try pickSwapExtent(surface_capabilities, self.window);
 
@@ -273,7 +267,7 @@ const Swapchain = struct {
         errdefer self.allocator.free(self.image_views);
     }
 
-    fn destroySwapchainAndViews(self: *Self) void {
+    fn destroySwapchainAndViews(self: *@This()) void {
         for (self.image_views) |view| {
             self.vkd.destroyImageView(self.device, view, allocation_callbacks);
         }
@@ -281,7 +275,7 @@ const Swapchain = struct {
         self.vkd.destroySwapchainKHR(self.device, self.handle, allocation_callbacks);
     }
 
-    fn deinit(self: *Self) void {
+    fn deinit(self: *@This()) void {
         self.destroySwapchainAndViews();
         self.allocator.free(self.image_views);
         self.allocator.free(self.images);
@@ -289,8 +283,6 @@ const Swapchain = struct {
 };
 
 const GraphicsPipeline = struct {
-    const Self = @This();
-
     vkd: DeviceFunctions,
     device: vk.Device,
 
@@ -304,7 +296,7 @@ const GraphicsPipeline = struct {
         fragment_shader: vk.ShaderModule,
         render_pass: vk.RenderPass,
         descriptor_set_layout: vk.DescriptorSetLayout,
-    ) !Self {
+    ) !@This() {
         const vert_shader_stage_create_info = vk.PipelineShaderStageCreateInfo{
             .stage = .{ .vertex_bit = true },
             .module = vertex_shader,
@@ -436,15 +428,13 @@ const GraphicsPipeline = struct {
         };
     }
 
-    fn deinit(self: *Self) void {
+    fn deinit(self: *@This()) void {
         self.vkd.destroyPipeline(self.device, self.handle, allocation_callbacks);
         self.vkd.destroyPipelineLayout(self.device, self.layout, allocation_callbacks);
     }
 };
 
 const Framebuffers = struct {
-    const Self = @This();
-
     vkd: DeviceFunctions,
     allocator: Allocator,
     device: vk.Device,
@@ -457,7 +447,7 @@ const Framebuffers = struct {
         device: vk.Device,
         swapchain: *const Swapchain,
         render_pass: vk.RenderPass,
-    ) !Self {
+    ) !@This() {
         const framebuffers = try allocator.alloc(vk.Framebuffer, swapchain.image_views.len);
         errdefer allocator.free(framebuffers);
 
@@ -483,7 +473,7 @@ const Framebuffers = struct {
         };
     }
 
-    fn recreate(self: *Self, swapchain: *const Swapchain, render_pass: vk.RenderPass) !void {
+    fn recreate(self: *@This(), swapchain: *const Swapchain, render_pass: vk.RenderPass) !void {
         self.destroyFramebuffers();
 
         createHandles(self.vkd, self.device, swapchain, render_pass, self.handles) catch |e| {
@@ -514,21 +504,19 @@ const Framebuffers = struct {
         }
     }
 
-    fn destroyFramebuffers(self: *Self) void {
+    fn destroyFramebuffers(self: *@This()) void {
         for (self.handles) |handle| {
             self.vkd.destroyFramebuffer(self.device, handle, allocation_callbacks);
         }
     }
 
-    fn deinit(self: *Self) void {
+    fn deinit(self: *@This()) void {
         self.destroyFramebuffers();
         self.allocator.free(self.handles);
     }
 };
 
 const Sync = struct {
-    const Self = @This();
-
     vkd: DeviceFunctions,
     device: vk.Device,
 
@@ -536,7 +524,7 @@ const Sync = struct {
     render_finished_semaphores: [max_frames_in_flight]vk.Semaphore,
     in_flight_fences: [max_frames_in_flight]vk.Fence,
 
-    fn init(vkd: DeviceFunctions, device: vk.Device) !Self {
+    fn init(vkd: DeviceFunctions, device: vk.Device) !@This() {
         const semaphore_create_info = vk.SemaphoreCreateInfo{};
         const fence_create_info = vk.FenceCreateInfo{
             .flags = .{ .signaled_bit = true },
@@ -560,7 +548,7 @@ const Sync = struct {
         };
     }
 
-    fn deinit(self: *Self) void {
+    fn deinit(self: *@This()) void {
         for (0..max_frames_in_flight) |i| {
             self.vkd.destroySemaphore(self.device, self.image_available_semaphores[i], allocation_callbacks);
             self.vkd.destroySemaphore(self.device, self.render_finished_semaphores[i], allocation_callbacks);
@@ -578,8 +566,6 @@ const UniformBuffer = struct {
 const UniformBufferArray = std.BoundedArray(UniformBuffer, max_frames_in_flight);
 
 pub const Ctx = struct {
-    const Self = @This();
-
     vki: InstanceFunctions,
     vkd: DeviceFunctions,
 
@@ -796,7 +782,7 @@ pub const Ctx = struct {
         };
     }
 
-    pub fn deinit(self: *Self) void {
+    pub fn deinit(self: *@This()) void {
         self.sync.deinit();
         vulkanLog("sync objects destroyed", .{});
 
@@ -860,7 +846,7 @@ pub const Ctx = struct {
         vulkanLog("instance destroyed", .{});
     }
 
-    pub fn drawFrame(self: *Self) !void {
+    pub fn drawFrame(self: *@This()) !void {
         const fences = [_]vk.Fence{self.sync.in_flight_fences[self.current_frame]};
         _ = try self.vkd.waitForFences(self.device, fences.len, &fences, vk.TRUE, std.math.maxInt(u64));
 
@@ -940,11 +926,11 @@ pub const Ctx = struct {
         self.current_frame = (self.current_frame + 1) % max_frames_in_flight;
     }
 
-    pub fn waitForIdle(self: *const Self) !void {
+    pub fn waitForIdle(self: *const @This()) !void {
         try self.vkd.deviceWaitIdle(self.device);
     }
 
-    pub fn recreateSwapchain(self: *Self) !void {
+    pub fn recreateSwapchain(self: *@This()) !void {
         var size = self.window.getFramebufferSize();
         while (size.width == 0 or size.height == 0) {
             size = self.window.getFramebufferSize();
@@ -955,7 +941,7 @@ pub const Ctx = struct {
         try self.framebuffers.recreate(&self.swapchain, self.render_pass);
     }
 
-    fn updateUniformBuffer(self: *Self, current_frame: u32) !void {
+    fn updateUniformBuffer(self: *@This(), current_frame: u32) !void {
         const time_ns = self.timer.read();
         const time = @as(f32, @floatFromInt(time_ns)) / std.time.ns_per_s;
 
