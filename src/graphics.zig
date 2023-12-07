@@ -113,6 +113,11 @@ const DeviceFunctions = vk.DeviceWrapper(.{
     .queueWaitIdle = true,
     .createDescriptorSetLayout = true,
     .destroyDescriptorSetLayout = true,
+    .createDescriptorPool = true,
+    .destroyDescriptorPool = true,
+    .allocateDescriptorSets = true,
+    .updateDescriptorSets = true,
+    .cmdBindDescriptorSets = true,
 });
 
 const QueueFamiliesIndices = struct {
@@ -346,7 +351,7 @@ const GraphicsPipeline = struct {
             .polygon_mode = .fill,
             .line_width = 1,
             .cull_mode = .{ .back_bit = true },
-            .front_face = .clockwise,
+            .front_face = .counter_clockwise,
             .depth_bias_enable = vk.FALSE,
             .depth_bias_constant_factor = 0,
             .depth_bias_clamp = 0,
@@ -596,6 +601,8 @@ pub const Ctx = struct {
     fragment_shader: vk.ShaderModule,
     render_pass: vk.RenderPass,
     descriptor_set_layout: vk.DescriptorSetLayout,
+    descriptor_pool: vk.DescriptorPool,
+    descriptor_sets: [max_frames_in_flight]vk.DescriptorSet,
     graphics_pipeline: GraphicsPipeline,
     framebuffers: Framebuffers,
     command_pool: vk.CommandPool,
@@ -738,6 +745,19 @@ pub const Ctx = struct {
             &uniform_buffer_queues,
         );
 
+        const descriptor_pool = try createDescriptorPool(vkd, device);
+        errdefer vkd.destroyDescriptorPool(device, descriptor_pool, allocation_callbacks);
+        vulkanLog("created descriptor pool", .{});
+
+        const descriptor_sets = try createDescriptorSets(
+            vkd,
+            device,
+            descriptor_pool,
+            descriptor_set_layout,
+            uniform_buffers,
+        );
+        vulkanLog("created descriptor sets", .{});
+
         var sync = try Sync.init(vkd, device);
         errdefer sync.deinit();
         vulkanLog("sync objects created", .{});
@@ -763,6 +783,8 @@ pub const Ctx = struct {
             .render_pass = render_pass,
             .uniform_buffers = uniform_buffers,
             .descriptor_set_layout = descriptor_set_layout,
+            .descriptor_pool = descriptor_pool,
+            .descriptor_sets = descriptor_sets,
             .graphics_pipeline = graphics_pipeline,
             .framebuffers = framebuffers,
             .command_pool = command_pool,
@@ -819,6 +841,9 @@ pub const Ctx = struct {
             self.vkd.freeMemory(self.device, buffer.memory, allocation_callbacks);
         }
 
+        self.vkd.destroyDescriptorPool(self.device, self.descriptor_pool, allocation_callbacks);
+        vulkanLog("descriptor pool destroyed", .{});
+
         self.vkd.destroyDescriptorSetLayout(self.device, self.descriptor_set_layout, allocation_callbacks);
         vulkanLog("descriptor set layout destroyed", .{});
 
@@ -863,10 +888,11 @@ pub const Ctx = struct {
             self.render_pass,
             self.framebuffers.handles[index],
             self.swapchain.extent,
-            self.graphics_pipeline.handle,
+            self.graphics_pipeline,
             self.vertex_buffer.handle,
             self.index_buffer.handle,
             const_indices.len,
+            self.descriptor_sets[self.current_frame],
         );
 
         try self.updateUniformBuffer(self.current_frame);
@@ -930,7 +956,7 @@ pub const Ctx = struct {
     }
 
     fn updateUniformBuffer(self: *Self, current_frame: u32) !void {
-        const time_ns = self.timer.lap();
+        const time_ns = self.timer.read();
         const time = @as(f32, @floatFromInt(time_ns)) / std.time.ns_per_s;
 
         const aspect_ratio = @as(f32, @floatFromInt(self.swapchain.extent.width)) /
@@ -946,6 +972,63 @@ pub const Ctx = struct {
         gpu_ptr.* = ubo;
     }
 };
+
+fn createDescriptorPool(vkd: DeviceFunctions, device: vk.Device) !vk.DescriptorPool {
+    const pool_size = vk.DescriptorPoolSize{
+        .type = .uniform_buffer,
+        .descriptor_count = max_frames_in_flight,
+    };
+    const pool_info = vk.DescriptorPoolCreateInfo{
+        .pool_size_count = 1,
+        .p_pool_sizes = @ptrCast(&pool_size),
+        .max_sets = max_frames_in_flight,
+    };
+
+    return vkd.createDescriptorPool(device, &pool_info, allocation_callbacks);
+}
+
+fn createDescriptorSets(
+    vkd: DeviceFunctions,
+    device: vk.Device,
+    pool: vk.DescriptorPool,
+    descriptor_set_layout: vk.DescriptorSetLayout,
+    uniform_buffers: UniformBufferArray,
+) ![max_frames_in_flight]vk.DescriptorSet {
+    const layouts = [_]vk.DescriptorSetLayout{descriptor_set_layout} ** max_frames_in_flight;
+
+    const alloc_info = vk.DescriptorSetAllocateInfo{
+        .descriptor_pool = pool,
+        .descriptor_set_count = max_frames_in_flight,
+        .p_set_layouts = &layouts,
+    };
+
+    var descriptor_sets: [max_frames_in_flight]vk.DescriptorSet = undefined;
+    try vkd.allocateDescriptorSets(device, &alloc_info, &descriptor_sets);
+
+    for (descriptor_sets, 0..) |set, i| {
+        const buffer_info = vk.DescriptorBufferInfo{
+            .buffer = uniform_buffers.constSlice()[i].handle,
+            .offset = 0,
+            .range = @sizeOf(UniformBufferObject),
+        };
+        const image_info: vk.DescriptorImageInfo = undefined;
+        const texel_buffer_view: vk.BufferView = undefined;
+        const descriptor_write = vk.WriteDescriptorSet{
+            .dst_set = set,
+            .dst_binding = 0,
+            .dst_array_element = 0,
+            .descriptor_type = .uniform_buffer,
+            .descriptor_count = 1,
+            .p_buffer_info = @ptrCast(&buffer_info),
+            .p_image_info = @ptrCast(&image_info),
+            .p_texel_buffer_view = @ptrCast(&texel_buffer_view),
+        };
+
+        vkd.updateDescriptorSets(device, 1, @ptrCast(&descriptor_write), 0, null);
+    }
+
+    return descriptor_sets;
+}
 
 fn createUniformBuffers(
     vkd: DeviceFunctions,
@@ -1225,10 +1308,11 @@ fn recordCommandBuffer(
     render_pass: vk.RenderPass,
     framebuffer: vk.Framebuffer,
     extent: vk.Extent2D,
-    graphics_pipeline: vk.Pipeline,
+    graphics_pipeline: GraphicsPipeline,
     vertex_buffer: vk.Buffer,
     index_buffer: vk.Buffer,
     index_count: u32,
+    descriptor_set: vk.DescriptorSet,
 ) !void {
     const begin_info = vk.CommandBufferBeginInfo{
         .flags = .{},
@@ -1252,7 +1336,7 @@ fn recordCommandBuffer(
     };
 
     vkd.cmdBeginRenderPass(command_buffer, &render_pass_begin_info, .@"inline");
-    vkd.cmdBindPipeline(command_buffer, .graphics, graphics_pipeline);
+    vkd.cmdBindPipeline(command_buffer, .graphics, graphics_pipeline.handle);
 
     const viewports = [_]vk.Viewport{
         .{
@@ -1280,6 +1364,16 @@ fn recordCommandBuffer(
     };
     vkd.cmdSetScissor(command_buffer, 0, scissors.len, &scissors);
 
+    vkd.cmdBindDescriptorSets(
+        command_buffer,
+        .graphics,
+        graphics_pipeline.layout,
+        0,
+        1,
+        @ptrCast(&descriptor_set),
+        0,
+        null,
+    );
     vkd.cmdDrawIndexed(command_buffer, index_count, 1, 0, 0, 0);
     vkd.cmdEndRenderPass(command_buffer);
 
