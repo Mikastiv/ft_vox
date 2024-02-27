@@ -36,6 +36,10 @@ pub fn init(allocator: std.mem.Allocator, width: u32, height: u32, title: [*:0]c
     return self;
 }
 
+pub fn deinit(self: *@This()) void {
+    c.glfwDestroyWindow(self.handle);
+}
+
 pub fn shouldClose(self: *const @This()) bool {
     return c.glfwWindowShouldClose(self.handle) == c.GLFW_TRUE;
 }
@@ -51,6 +55,16 @@ pub fn aspectRatio(self: *const @This()) f32 {
     const w: f32 = @floatFromInt(self.width);
     const h: f32 = @floatFromInt(self.height);
     return w / h;
+}
+
+pub fn createSurface(self: *const @This(), instance: vk.Instance) !vk.SurfaceKHR {
+    assert(instance != .null_handle);
+
+    var surface: vk.SurfaceKHR = undefined;
+    const result = c.glfwCreateWindowSurface(instance, self.handle, null, &surface);
+    if (result != .success) return error.VulkanSurfaceCreationFailed;
+
+    return surface;
 }
 
 fn getUserPointer(window: ?*c.GLFWwindow) *@This() {

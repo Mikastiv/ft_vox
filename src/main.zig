@@ -3,13 +3,15 @@ const Engine = @import("Engine.zig");
 const Window = @import("Window.zig");
 const c = @import("c.zig");
 
+const memory_size = 1024 * 1024 * 100;
+
 pub fn main() !void {
     if (c.glfwInit() == c.GLFW_FALSE) return error.GlfwInitFailed;
     defer c.glfwTerminate();
 
     _ = c.glfwSetErrorCallback(glfwErrorCallback);
 
-    const memory = try std.heap.page_allocator.alloc(u8, 1024 * 1024 * 500);
+    const memory = try std.heap.page_allocator.alloc(u8, memory_size);
     defer std.heap.page_allocator.free(memory);
 
     var fba = std.heap.FixedBufferAllocator.init(memory);
@@ -17,7 +19,7 @@ pub fn main() !void {
 
     const window = try Window.init(allocator, 1700, 900, "ft_vox");
 
-    var engine = try Engine.init();
+    var engine = try Engine.init(allocator, window);
     defer engine.deinit();
 
     try engine.run();
