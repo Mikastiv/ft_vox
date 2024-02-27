@@ -1,0 +1,26 @@
+.{
+    .name = "vulkan_guide",
+    .version = "0.0.0",
+    //.minimum_zig_version = "0.11.0",
+    .dependencies = .{
+        .vulkan_zig = .{
+            .url = "https://github.com/Snektron/vulkan-zig/archive/7f161ce0edfcc91bd4defe4fb2fa45a7d39097e7.tar.gz",
+            .hash = "1220e6c4e31599c25cc7df2b300ee5ece3d89ddf0c566dbb5e4eb8d0d49e32ad5bb6",
+        },
+        .vk_kickstart = .{
+            .url = "https://github.com/Mikastiv/vk-kickstart/archive/895d77241ad51e5e69dea03ef9d0192d368fb6cc.tar.gz",
+            .hash = "12201efc2c9f99ce0b93e3a898ac201f324c8482943ed66501197773ac5c49cf70cf",
+        },
+        .glfw = .{
+            .url = "https://pkg.machengine.org/glfw/586e14a964740747ca7913fc17096b3bb3d52409.tar.gz",
+            .hash = "122091debcee20ff2aaf983a9e8c215d4e50cc6caf44975442218901ea728e7dd79a",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "README.md",
+        //"LICENSE",
+    },
+}
