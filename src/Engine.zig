@@ -8,6 +8,8 @@ const vk_utils = @import("vk_utils.zig");
 const pipeline = @import("pipeline.zig");
 const shaders = @import("shaders");
 const mesh = @import("mesh.zig");
+const math = @import("math.zig");
+const descriptor = @import("descriptor.zig");
 
 const assert = std.debug.assert;
 
@@ -15,6 +17,12 @@ const vki = vkk.dispatch.vki;
 const vkd = vkk.dispatch.vkd;
 
 const staging_buffer_size = 1024 * 1024 * 100;
+
+const GpuSceneData = extern struct {
+    view: math.Mat4,
+    proj: math.Mat4,
+    view_proj: math.Mat4,
+};
 
 pub const AllocatedImage = struct {
     handle: vk.Image,
@@ -27,6 +35,7 @@ pub const AllocatedImage = struct {
 pub const AllocatedBuffer = struct {
     handle: vk.Buffer,
     memory: vk.DeviceMemory,
+    size: vk.DeviceSize,
 };
 
 const ImmediateContext = struct {
@@ -66,6 +75,9 @@ default_pipeline: vk.Pipeline,
 
 staging_buffer: AllocatedBuffer,
 vertex_buffer: AllocatedBuffer,
+scene_data_buffer: AllocatedBuffer,
+
+descriptor_set: vk.DescriptorSet,
 
 deletion_queue: vk_utils.DeletionQueue,
 
@@ -169,8 +181,33 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     );
     try deletion_queue.appendBuffer(vertex_buffer);
 
-    assert(cube.len == 6);
     try uploadMesh(device.handle, device.graphics_queue, immediate_context, staging_buffer, vertex_buffer, cube);
+
+    const min_alignment = physical_device.properties.limits.min_uniform_buffer_offset_alignment;
+    assert(min_alignment > 0);
+
+    const global_scene_data_size = std.mem.alignForward(vk.DeviceSize, @sizeOf(GpuSceneData), min_alignment) * frame_overlap;
+    const scene_data_buffer = try createBuffer(
+        device.handle,
+        physical_device.handle,
+        global_scene_data_size,
+        .{ .uniform_buffer_bit = true },
+        .{ .host_visible_bit = true },
+    );
+    try deletion_queue.appendBuffer(scene_data_buffer);
+
+    var descriptor_layout_builder = try descriptor.LayoutBuilder.init(allocator, 10);
+    try descriptor_layout_builder.addBinding(0, .uniform_buffer_dynamic);
+    const descriptor_layout = try descriptor_layout_builder.build(device.handle, .{ .vertex_bit = true, .fragment_bit = true });
+    try deletion_queue.append(descriptor_layout);
+
+    const ratios = [_]descriptor.Allocator.PoolSizeRatio{
+        .{ .type = .uniform_buffer_dynamic, .ratio = 1 },
+    };
+    var descriptor_allocator = try descriptor.Allocator.init(allocator, device.handle, 10, &ratios);
+    try deletion_queue.append(descriptor_allocator.pool);
+
+    const descriptor_set = try descriptor_allocator.alloc(device.handle, descriptor_layout);
 
     return .{
         .window = window,
@@ -191,6 +228,8 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
         .frames = frames,
         .staging_buffer = staging_buffer,
         .vertex_buffer = vertex_buffer,
+        .scene_data_buffer = scene_data_buffer,
+        .descriptor_set = descriptor_set,
     };
 }
 
@@ -507,6 +546,7 @@ fn createBuffer(
     return .{
         .handle = buffer,
         .memory = memory,
+        .size = size,
     };
 }
 

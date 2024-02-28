@@ -18,6 +18,8 @@ const HandleType = enum {
     pipeline,
     semaphore,
     buffer,
+    descriptor_set_layout,
+    descriptor_pool,
 };
 
 const DeletionEntry = struct {
@@ -47,6 +49,8 @@ pub const DeletionQueue = struct {
             vk.Pipeline => .pipeline,
             vk.Semaphore => .semaphore,
             vk.Buffer => .buffer,
+            vk.DescriptorSetLayout => .descriptor_set_layout,
+            vk.DescriptorPool => .descriptor_pool,
             else => @compileError("unsupported type: " ++ @typeName(T)),
         };
         const handle_raw: usize = @intFromEnum(handle);
@@ -82,6 +86,8 @@ pub const DeletionQueue = struct {
                 .pipeline => vkd().destroyPipeline(device, @enumFromInt(entry.handle), null),
                 .semaphore => vkd().destroySemaphore(device, @enumFromInt(entry.handle), null),
                 .buffer => vkd().destroyBuffer(device, @enumFromInt(entry.handle), null),
+                .descriptor_set_layout => vkd().destroyDescriptorSetLayout(device, @enumFromInt(entry.handle), null),
+                .descriptor_pool => vkd().destroyDescriptorPool(device, @enumFromInt(entry.handle), null),
             }
         }
         self.entries.clearRetainingCapacity();
@@ -233,4 +239,12 @@ pub fn destroyFrameBuffers(device: vk.Device, framebuffers: []const vk.Framebuff
     for (framebuffers) |framebuffer| {
         vkd().destroyFramebuffer(device, framebuffer, null);
     }
+}
+
+pub fn scale(comptime T: type, value: T, factor: f32) T {
+    if (@typeInfo(T) != .Int) @compileError("only integer");
+
+    const value_f32: f32 = @floatFromInt(value);
+    const scaled = value_f32 * factor;
+    return @intFromFloat(scaled);
 }
