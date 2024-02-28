@@ -17,6 +17,7 @@ const HandleType = enum {
     pipeline_layout,
     pipeline,
     semaphore,
+    buffer,
 };
 
 const DeletionEntry = struct {
@@ -45,6 +46,7 @@ pub const DeletionQueue = struct {
             vk.PipelineLayout => .pipeline_layout,
             vk.Pipeline => .pipeline,
             vk.Semaphore => .semaphore,
+            vk.Buffer => .buffer,
             else => @compileError("unsupported type: " ++ @typeName(T)),
         };
         const handle_raw: usize = @intFromEnum(handle);
@@ -57,6 +59,11 @@ pub const DeletionQueue = struct {
         try self.append(image.handle);
         try self.append(image.memory);
         try self.append(image.view);
+    }
+
+    pub fn appendBuffer(self: *@This(), buffer: Engine.AllocatedBuffer) !void {
+        try self.append(buffer.handle);
+        try self.append(buffer.memory);
     }
 
     pub fn flush(self: *@This(), device: vk.Device) void {
@@ -74,6 +81,7 @@ pub const DeletionQueue = struct {
                 .pipeline_layout => vkd().destroyPipelineLayout(device, @enumFromInt(entry.handle), null),
                 .pipeline => vkd().destroyPipeline(device, @enumFromInt(entry.handle), null),
                 .semaphore => vkd().destroySemaphore(device, @enumFromInt(entry.handle), null),
+                .buffer => vkd().destroyBuffer(device, @enumFromInt(entry.handle), null),
             }
         }
         self.entries.clearRetainingCapacity();

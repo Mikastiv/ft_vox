@@ -13,11 +13,18 @@ const assert = std.debug.assert;
 const vki = vkk.dispatch.vki;
 const vkd = vkk.dispatch.vkd;
 
+const staging_buffer_size = 1024 * 1024 * 100;
+
 pub const AllocatedImage = struct {
     handle: vk.Image,
     view: vk.ImageView,
     format: vk.Format,
     extent: vk.Extent3D,
+    memory: vk.DeviceMemory,
+};
+
+pub const AllocatedBuffer = struct {
+    handle: vk.Buffer,
     memory: vk.DeviceMemory,
 };
 
@@ -55,6 +62,8 @@ immediate_context: ImmediateContext,
 render_pass: vk.RenderPass,
 default_pipeline_layout: vk.PipelineLayout,
 default_pipeline: vk.Pipeline,
+
+staging_buffer: AllocatedBuffer,
 
 deletion_queue: vk_utils.DeletionQueue,
 
@@ -138,6 +147,15 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     );
     try deletion_queue.append(default_pipeline);
 
+    const staging_buffer = try createBuffer(
+        device.handle,
+        physical_device.handle,
+        staging_buffer_size,
+        .{ .transfer_src_bit = true },
+        .{ .host_coherent_bit = true, .host_visible_bit = true },
+    );
+    try deletion_queue.appendBuffer(staging_buffer);
+
     return .{
         .window = window,
         .surface = surface,
@@ -155,6 +173,7 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
         .default_pipeline_layout = default_pipeline_layout,
         .default_pipeline = default_pipeline,
         .frames = frames,
+        .staging_buffer = staging_buffer,
     };
 }
 
@@ -385,6 +404,45 @@ fn createImmediateContext(device: vk.Device, graphics_family_index: u32) !Immedi
         .fence = fence,
         .command_pool = command_pool,
         .command_buffer = command_buffer,
+    };
+}
+
+fn createBuffer(
+    device: vk.Device,
+    physical_device: vk.PhysicalDevice,
+    size: vk.DeviceSize,
+    usage: vk.BufferUsageFlags,
+    property_flags: vk.MemoryPropertyFlags,
+) !AllocatedBuffer {
+    const create_info: vk.BufferCreateInfo = .{
+        .size = size,
+        .usage = usage,
+        .sharing_mode = .exclusive,
+    };
+    const buffer = try vkd().createBuffer(device, &create_info, null);
+    errdefer vkd().destroyBuffer(device, buffer, null);
+
+    const requirements = vkd().getBufferMemoryRequirements(device, buffer);
+    const memory_properties = vki().getPhysicalDeviceMemoryProperties(physical_device);
+
+    const memory_type = findMemoryType(
+        memory_properties,
+        requirements.memory_type_bits,
+        property_flags,
+    ) orelse return error.NoSuitableMemoryType;
+
+    const alloc_info = vk.MemoryAllocateInfo{
+        .allocation_size = requirements.size,
+        .memory_type_index = memory_type,
+    };
+    const memory = try vkd().allocateMemory(device, &alloc_info, null);
+    errdefer vkd().freeMemory(device, memory, null);
+
+    try vkd().bindBufferMemory(device, buffer, memory, 0);
+
+    return .{
+        .handle = buffer,
+        .memory = memory,
     };
 }
 
