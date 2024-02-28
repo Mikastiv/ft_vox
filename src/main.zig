@@ -28,10 +28,6 @@ pub fn main() !void {
     defer engine.deinit();
 
     try engine.run();
-
-    while (!window.shouldClose()) {
-        c.glfwPollEvents();
-    }
 }
 
 fn glfwErrorCallback(error_code: i32, description: [*c]const u8) callconv(.C) void {

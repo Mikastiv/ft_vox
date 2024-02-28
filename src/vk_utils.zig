@@ -88,7 +88,7 @@ pub fn createShaderModule(device: vk.Device, bytecode: []align(4) const u8) !vk.
     return vkd().createShaderModule(device, &create_info, null);
 }
 
-pub fn destroyImageViews(device: vk.Device, image_views: []vk.ImageView) void {
+pub fn destroyImageViews(device: vk.Device, image_views: []const vk.ImageView) void {
     assert(device != .null_handle);
 
     for (image_views) |view| {
@@ -171,4 +171,55 @@ pub fn defaultRenderPass(device: vk.Device, image_format: vk.Format, depth_forma
     };
 
     return vkd().createRenderPass(device, &render_pass_info, null);
+}
+
+pub fn createFramebuffers(
+    device: vk.Device,
+    render_pass: vk.RenderPass,
+    extent: vk.Extent2D,
+    image_views: []const vk.ImageView,
+    depth_image_view: vk.ImageView,
+    buffer: []vk.Framebuffer,
+) !void {
+    assert(device != .null_handle);
+    assert(render_pass != .null_handle);
+    assert(extent.width > 0);
+    assert(extent.height > 0);
+    assert(buffer.len == image_views.len);
+    for (image_views) |view| assert(view != .null_handle);
+    assert(depth_image_view != .null_handle);
+
+    var initialized_count: u32 = 0;
+    errdefer {
+        for (0..initialized_count) |i| {
+            vkd().destroyFramebuffer(device, buffer[i], null);
+        }
+    }
+
+    var framebuffer_info = vk.FramebufferCreateInfo{
+        .render_pass = render_pass,
+        .width = extent.width,
+        .height = extent.height,
+        .layers = 1,
+    };
+
+    for (0..image_views.len) |i| {
+        const attachments = [_]vk.ImageView{ image_views[i], depth_image_view };
+        framebuffer_info.attachment_count = attachments.len;
+        framebuffer_info.p_attachments = &attachments;
+        buffer[i] = try vkd().createFramebuffer(device, &framebuffer_info, null);
+        initialized_count += 1;
+    }
+}
+
+pub fn destroyImage(device: vk.Device, image: Engine.AllocatedImage) void {
+    vkd().destroyImageView(device, image.view, null);
+    vkd().destroyImage(device, image.handle, null);
+    vkd().freeMemory(device, image.memory, null);
+}
+
+pub fn destroyFrameBuffers(device: vk.Device, framebuffers: []const vk.Framebuffer) void {
+    for (framebuffers) |framebuffer| {
+        vkd().destroyFramebuffer(device, framebuffer, null);
+    }
 }

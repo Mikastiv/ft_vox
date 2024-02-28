@@ -36,6 +36,7 @@ swapchain: vkk.Swapchain,
 swapchain_images: []vk.Image,
 swapchain_image_views: []vk.ImageView,
 depth_image: AllocatedImage,
+framebuffers: []vk.Framebuffer,
 
 immediate_context: ImmediateContext,
 render_pass: vk.RenderPass,
@@ -79,12 +80,9 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     const images = try allocator.alloc(vk.Image, swapchain.image_count);
     try swapchain.getImages(images);
 
-    const image_views = try allocator.alloc(vk.ImageView, images.len);
+    const image_views = try allocator.alloc(vk.ImageView, swapchain.image_count);
     try swapchain.getImageViews(images, image_views);
     errdefer vk_utils.destroyImageViews(device.handle, image_views);
-
-    var deletion_queue = try vk_utils.DeletionQueue.init(allocator, 32);
-    errdefer deletion_queue.flush(device.handle);
 
     const depth_image = try createImage(
         device.handle,
@@ -95,10 +93,17 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
         .{ .device_local_bit = true },
         .{ .depth_bit = true },
     );
-    try deletion_queue.appendImage(depth_image);
+    errdefer vk_utils.destroyImage(device.handle, depth_image);
+
+    var deletion_queue = try vk_utils.DeletionQueue.init(allocator, 32);
+    errdefer deletion_queue.flush(device.handle);
 
     const render_pass = try vk_utils.defaultRenderPass(device.handle, swapchain.image_format, depth_image.format);
     try deletion_queue.append(render_pass);
+
+    const framebuffers = try allocator.alloc(vk.Framebuffer, swapchain.image_count);
+    try vk_utils.createFramebuffers(device.handle, render_pass, swapchain.extent, image_views, depth_image.view, framebuffers);
+    errdefer vk_utils.destroyFrameBuffers(device.handle, framebuffers);
 
     const immediate_context = try createImmediateContext(device.handle, device.graphics_queue_index);
     try deletion_queue.append(immediate_context.fence);
@@ -126,6 +131,7 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
         .swapchain_images = images,
         .swapchain_image_views = image_views,
         .depth_image = depth_image,
+        .framebuffers = framebuffers,
         .render_pass = render_pass,
         .immediate_context = immediate_context,
         .deletion_queue = deletion_queue,
@@ -136,6 +142,8 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
 
 pub fn deinit(self: *@This()) void {
     self.deletion_queue.flush(self.device.handle);
+    vk_utils.destroyFrameBuffers(self.device.handle, self.framebuffers);
+    vk_utils.destroyImage(self.device.handle, self.depth_image);
     vk_utils.destroyImageViews(self.device.handle, self.swapchain_image_views);
     self.swapchain.destroy();
     self.device.destroy();
@@ -145,6 +153,16 @@ pub fn deinit(self: *@This()) void {
 }
 
 pub fn run(self: *@This()) !void {
+    while (!self.window.shouldClose()) {
+        c.glfwPollEvents();
+
+        try self.draw();
+    }
+
+    try vkd().deviceWaitIdle(self.device.handle);
+}
+
+fn draw(self: *@This()) !void {
     _ = self;
 }
 
