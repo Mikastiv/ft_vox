@@ -207,7 +207,7 @@ fn draw(self: *@This()) !void {
     try vkd().beginCommandBuffer(cmd, &command_begin_info);
 
     const clear_value = vk.ClearValue{ .color = .{ .float_32 = .{ 0.1, 0.1, 0.1, 1 } } };
-    const depth_clear = vk.ClearValue{ .depth_stencil = .{ .depth = 1, .stencil = 0 } };
+    const depth_clear = vk.ClearValue{ .depth_stencil = .{ .depth = 0, .stencil = 0 } };
     const clear_values = [_]vk.ClearValue{ clear_value, depth_clear };
 
     const render_pass_info = vk_init.renderPassBeginInfo(
@@ -217,6 +217,26 @@ fn draw(self: *@This()) !void {
         &clear_values,
     );
     vkd().cmdBeginRenderPass(cmd, &render_pass_info, .@"inline");
+
+    vkd().cmdBindPipeline(cmd, .graphics, self.default_pipeline);
+
+    const viewport: vk.Viewport = .{
+        .x = 0,
+        .y = 0,
+        .width = @floatFromInt(self.swapchain.extent.width),
+        .height = @floatFromInt(self.swapchain.extent.height),
+        .min_depth = 0,
+        .max_depth = 1,
+    };
+    vkd().cmdSetViewport(cmd, 0, 1, @ptrCast(&viewport));
+
+    const scissor: vk.Rect2D = .{
+        .extent = self.swapchain.extent,
+        .offset = .{ .x = 0, .y = 0 },
+    };
+    vkd().cmdSetScissor(cmd, 0, 1, @ptrCast(&scissor));
+
+    vkd().cmdDraw(cmd, 3, 1, 0, 0);
 
     vkd().cmdEndRenderPass(cmd);
     try vkd().endCommandBuffer(cmd);
