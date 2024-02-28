@@ -5,6 +5,8 @@ const c = @import("c.zig");
 const Window = @import("Window.zig");
 const vk_init = @import("vk_init.zig");
 const vk_utils = @import("vk_utils.zig");
+const pipeline = @import("pipeline.zig");
+const shaders = @import("shaders");
 
 const assert = std.debug.assert;
 
@@ -35,8 +37,10 @@ swapchain_images: []vk.Image,
 swapchain_image_views: []vk.ImageView,
 depth_image: AllocatedImage,
 
-render_pass: vk.RenderPass,
 immediate_context: ImmediateContext,
+render_pass: vk.RenderPass,
+default_pipeline_layout: vk.PipelineLayout,
+default_pipeline: vk.Pipeline,
 
 deletion_queue: vk_utils.DeletionQueue,
 
@@ -77,13 +81,14 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
 
     const image_views = try allocator.alloc(vk.ImageView, images.len);
     try swapchain.getImageViews(images, image_views);
-    errdefer destroyImageViews(device.handle, image_views);
+    errdefer vk_utils.destroyImageViews(device.handle, image_views);
 
     var deletion_queue = try vk_utils.DeletionQueue.init(allocator, 32);
     errdefer deletion_queue.flush(device.handle);
 
     const depth_image = try createImage(
-        &device,
+        device.handle,
+        physical_device.handle,
         .d32_sfloat,
         .{ .depth_stencil_attachment_bit = true },
         .{ .width = swapchain.extent.width, .height = swapchain.extent.height, .depth = 1 },
@@ -92,12 +97,24 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     );
     try deletion_queue.appendImage(depth_image);
 
-    const render_pass = try defaultRenderPass(device.handle, swapchain.image_format, depth_image.format);
+    const render_pass = try vk_utils.defaultRenderPass(device.handle, swapchain.image_format, depth_image.format);
     try deletion_queue.append(render_pass);
 
     const immediate_context = try createImmediateContext(device.handle, device.graphics_queue_index);
     try deletion_queue.append(immediate_context.fence);
     try deletion_queue.append(immediate_context.command_pool);
+
+    const default_pipeline_layout = try vkd().createPipelineLayout(device.handle, &.{}, null);
+    try deletion_queue.append(default_pipeline_layout);
+
+    const default_pipeline = try createDefaultPipeline(
+        device.handle,
+        default_pipeline_layout,
+        render_pass,
+        swapchain.image_format,
+        depth_image.format,
+    );
+    try deletion_queue.append(default_pipeline);
 
     return .{
         .window = window,
@@ -112,12 +129,14 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
         .render_pass = render_pass,
         .immediate_context = immediate_context,
         .deletion_queue = deletion_queue,
+        .default_pipeline_layout = default_pipeline_layout,
+        .default_pipeline = default_pipeline,
     };
 }
 
 pub fn deinit(self: *@This()) void {
     self.deletion_queue.flush(self.device.handle);
-    destroyImageViews(self.device.handle, self.swapchain_image_views);
+    vk_utils.destroyImageViews(self.device.handle, self.swapchain_image_views);
     self.swapchain.destroy();
     self.device.destroy();
     vki().destroySurfaceKHR(self.instance.handle, self.surface, null);
@@ -130,6 +149,12 @@ pub fn run(self: *@This()) !void {
 }
 
 fn immediateSubmit(device: vk.Device, queue: vk.Queue, ctx: ImmediateContext, submit_ctx: anytype) !void {
+    assert(device != .null_handle);
+    assert(queue != .null_handle);
+    assert(ctx.command_buffer != .null_handle);
+    assert(ctx.command_pool != .null_handle);
+    assert(ctx.fence != .null_handle);
+
     const cmd = ctx.command_buffer;
 
     const cmd_begin_info = vk_init.commandBufferBeginInfo(.{ .one_time_submit_bit = true });
@@ -148,6 +173,42 @@ fn immediateSubmit(device: vk.Device, queue: vk.Queue, ctx: ImmediateContext, su
     try vkd().resetFences(device, 1, @ptrCast(&ctx.fence));
 
     try vkd().resetCommandPool(device, ctx.command_pool, .{});
+}
+
+fn createDefaultPipeline(
+    device: vk.Device,
+    layout: vk.PipelineLayout,
+    render_pass: vk.RenderPass,
+    image_format: vk.Format,
+    depth_format: vk.Format,
+) !vk.Pipeline {
+    assert(device != .null_handle);
+    assert(layout != .null_handle);
+    assert(image_format != .undefined);
+    assert(depth_format != .undefined);
+
+    const vertex_shader = try vk_utils.createShaderModule(device, &shaders.triangle_vert);
+    defer vkd().destroyShaderModule(device, vertex_shader, null);
+
+    const fragment_shader = try vk_utils.createShaderModule(device, &shaders.triangle_frag);
+    defer vkd().destroyShaderModule(device, fragment_shader, null);
+
+    const builder = pipeline.Builder.init(.{
+        .render_pass = render_pass,
+        .vertex_shader = vertex_shader,
+        .fragment_shader = fragment_shader,
+        .layout = layout,
+        .topology = .triangle_list,
+        .polygon_mode = .fill,
+        .cull_mode = .{},
+        .front_face = .counter_clockwise,
+        .enable_depth = true,
+        .depth_compare_op = .greater_or_equal,
+        .color_attachment_format = image_format,
+        .depth_attachment_format = depth_format,
+    });
+
+    return builder.build(device);
 }
 
 fn createImmediateContext(device: vk.Device, graphics_family_index: u32) !ImmediateContext {
@@ -172,20 +233,25 @@ fn createImmediateContext(device: vk.Device, graphics_family_index: u32) !Immedi
     };
 }
 
-pub fn createImage(
-    device: *const vkk.Device,
+fn createImage(
+    device: vk.Device,
+    physical_device: vk.PhysicalDevice,
     format: vk.Format,
     usage: vk.ImageUsageFlags,
     extent: vk.Extent3D,
     property_flags: vk.MemoryPropertyFlags,
     aspect_flags: vk.ImageAspectFlags,
 ) !AllocatedImage {
-    const image_info = vk_init.imageCreateInfo(format, usage, extent);
-    const image = try vkd().createImage(device.handle, &image_info, null);
-    errdefer vkd().destroyImage(device.handle, image, null);
+    assert(device != .null_handle);
+    assert(physical_device != .null_handle);
+    assert(format != .undefined);
 
-    const requirements = vkd().getImageMemoryRequirements(device.handle, image);
-    const memory_properties = vki().getPhysicalDeviceMemoryProperties(device.physical_device);
+    const image_info = vk_init.imageCreateInfo(format, usage, extent);
+    const image = try vkd().createImage(device, &image_info, null);
+    errdefer vkd().destroyImage(device, image, null);
+
+    const requirements = vkd().getImageMemoryRequirements(device, image);
+    const memory_properties = vki().getPhysicalDeviceMemoryProperties(physical_device);
 
     const memory_type = findMemoryType(
         memory_properties,
@@ -197,14 +263,14 @@ pub fn createImage(
         .allocation_size = requirements.size,
         .memory_type_index = memory_type,
     };
-    const memory = try vkd().allocateMemory(device.handle, &alloc_info, null);
-    errdefer vkd().freeMemory(device.handle, memory, null);
+    const memory = try vkd().allocateMemory(device, &alloc_info, null);
+    errdefer vkd().freeMemory(device, memory, null);
 
-    try vkd().bindImageMemory(device.handle, image, memory, 0);
+    try vkd().bindImageMemory(device, image, memory, 0);
 
     const image_view_info = vk_init.imageViewCreateInfo(format, image, aspect_flags);
-    const image_view = try vkd().createImageView(device.handle, &image_view_info, null);
-    errdefer vkd().destroyImageView(device.handle, image_view, null);
+    const image_view = try vkd().createImageView(device, &image_view_info, null);
+    errdefer vkd().destroyImageView(device, image_view, null);
 
     return .{
         .handle = image,
@@ -230,85 +296,4 @@ fn findMemoryType(
     }
 
     return null;
-}
-
-fn destroyImageViews(device: vk.Device, image_views: []vk.ImageView) void {
-    assert(device != .null_handle);
-
-    for (image_views) |view| {
-        assert(view != .null_handle);
-        vkd().destroyImageView(device, view, null);
-    }
-}
-
-fn defaultRenderPass(device: vk.Device, image_format: vk.Format, depth_format: vk.Format) !vk.RenderPass {
-    const color_attachment = vk.AttachmentDescription{
-        .format = image_format,
-        .samples = .{ .@"1_bit" = true },
-        .load_op = .clear,
-        .store_op = .store,
-        .stencil_load_op = .dont_care,
-        .stencil_store_op = .dont_care,
-        .initial_layout = .undefined,
-        .final_layout = .present_src_khr,
-    };
-
-    const color_attachment_ref = vk.AttachmentReference{
-        .attachment = 0,
-        .layout = .color_attachment_optimal,
-    };
-
-    const depth_attachment = vk.AttachmentDescription{
-        .format = depth_format,
-        .samples = .{ .@"1_bit" = true },
-        .load_op = .clear,
-        .store_op = .store,
-        .stencil_load_op = .dont_care,
-        .stencil_store_op = .dont_care,
-        .initial_layout = .undefined,
-        .final_layout = .depth_stencil_attachment_optimal,
-    };
-
-    const depth_attachment_ref = vk.AttachmentReference{
-        .attachment = 1,
-        .layout = .depth_stencil_attachment_optimal,
-    };
-
-    const subpass = vk.SubpassDescription{
-        .pipeline_bind_point = .graphics,
-        .color_attachment_count = 1,
-        .p_color_attachments = @ptrCast(&color_attachment_ref),
-        .p_depth_stencil_attachment = @ptrCast(&depth_attachment_ref),
-    };
-
-    const dependency = vk.SubpassDependency{
-        .src_subpass = vk.SUBPASS_EXTERNAL,
-        .dst_subpass = 0,
-        .src_stage_mask = .{ .color_attachment_output_bit = true },
-        .src_access_mask = .{},
-        .dst_stage_mask = .{ .color_attachment_output_bit = true },
-        .dst_access_mask = .{ .color_attachment_write_bit = true },
-    };
-
-    const depth_dependency = vk.SubpassDependency{
-        .src_subpass = vk.SUBPASS_EXTERNAL,
-        .dst_subpass = 0,
-        .src_stage_mask = .{ .early_fragment_tests_bit = true, .late_fragment_tests_bit = true },
-        .src_access_mask = .{},
-        .dst_stage_mask = .{ .early_fragment_tests_bit = true, .late_fragment_tests_bit = true },
-        .dst_access_mask = .{ .depth_stencil_attachment_write_bit = true },
-    };
-
-    const attachments = [_]vk.AttachmentDescription{ color_attachment, depth_attachment };
-    const dependencies = [_]vk.SubpassDependency{ dependency, depth_dependency };
-    const render_pass_info = vk.RenderPassCreateInfo{
-        .attachment_count = attachments.len,
-        .p_attachments = &attachments,
-        .subpass_count = 1,
-        .p_subpasses = @ptrCast(&subpass),
-        .dependency_count = dependencies.len,
-        .p_dependencies = &dependencies,
-    };
-
-    return vkd().createRenderPass(device, &render_pass_info, null);
 }

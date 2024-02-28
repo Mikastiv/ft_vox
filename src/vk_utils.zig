@@ -3,18 +3,22 @@ const vk = @import("vulkan-zig");
 const vkk = @import("vk-kickstart");
 const Engine = @import("Engine.zig");
 
+const assert = std.debug.assert;
+
 const vkd = vkk.dispatch.vkd;
 
-pub const HandleType = enum {
+const HandleType = enum {
     image,
     image_view,
     fence,
     command_pool,
     memory,
     render_pass,
+    pipeline_layout,
+    pipeline,
 };
 
-pub const DeletionEntry = struct {
+const DeletionEntry = struct {
     handle: usize,
     type: HandleType,
 };
@@ -37,9 +41,12 @@ pub const DeletionQueue = struct {
             vk.CommandPool => .command_pool,
             vk.DeviceMemory => .memory,
             vk.RenderPass => .render_pass,
+            vk.PipelineLayout => .pipeline_layout,
+            vk.Pipeline => .pipeline,
             else => @compileError("unsupported type: " ++ @typeName(T)),
         };
         const handle_raw: usize = @intFromEnum(handle);
+        assert(handle_raw != 0);
 
         try self.entries.append(.{ .handle = handle_raw, .type = handle_type });
     }
@@ -51,6 +58,8 @@ pub const DeletionQueue = struct {
     }
 
     pub fn flush(self: *@This(), device: vk.Device) void {
+        assert(device != .null_handle);
+
         var it = std.mem.reverseIterator(self.entries.items);
         while (it.next()) |entry| {
             switch (entry.type) {
@@ -60,8 +69,106 @@ pub const DeletionQueue = struct {
                 .command_pool => vkd().destroyCommandPool(device, @enumFromInt(entry.handle), null),
                 .memory => vkd().freeMemory(device, @enumFromInt(entry.handle), null),
                 .render_pass => vkd().destroyRenderPass(device, @enumFromInt(entry.handle), null),
+                .pipeline_layout => vkd().destroyPipelineLayout(device, @enumFromInt(entry.handle), null),
+                .pipeline => vkd().destroyPipeline(device, @enumFromInt(entry.handle), null),
             }
         }
         self.entries.clearRetainingCapacity();
     }
 };
+
+pub fn createShaderModule(device: vk.Device, bytecode: []align(4) const u8) !vk.ShaderModule {
+    assert(device != .null_handle);
+
+    const create_info = vk.ShaderModuleCreateInfo{
+        .code_size = bytecode.len,
+        .p_code = std.mem.bytesAsSlice(u32, bytecode).ptr,
+    };
+
+    return vkd().createShaderModule(device, &create_info, null);
+}
+
+pub fn destroyImageViews(device: vk.Device, image_views: []vk.ImageView) void {
+    assert(device != .null_handle);
+
+    for (image_views) |view| {
+        assert(view != .null_handle);
+        vkd().destroyImageView(device, view, null);
+    }
+}
+
+pub fn defaultRenderPass(device: vk.Device, image_format: vk.Format, depth_format: vk.Format) !vk.RenderPass {
+    assert(device != .null_handle);
+    assert(image_format != .undefined);
+    assert(depth_format != .undefined);
+
+    const color_attachment = vk.AttachmentDescription{
+        .format = image_format,
+        .samples = .{ .@"1_bit" = true },
+        .load_op = .clear,
+        .store_op = .store,
+        .stencil_load_op = .dont_care,
+        .stencil_store_op = .dont_care,
+        .initial_layout = .undefined,
+        .final_layout = .present_src_khr,
+    };
+
+    const color_attachment_ref = vk.AttachmentReference{
+        .attachment = 0,
+        .layout = .color_attachment_optimal,
+    };
+
+    const depth_attachment = vk.AttachmentDescription{
+        .format = depth_format,
+        .samples = .{ .@"1_bit" = true },
+        .load_op = .clear,
+        .store_op = .store,
+        .stencil_load_op = .dont_care,
+        .stencil_store_op = .dont_care,
+        .initial_layout = .undefined,
+        .final_layout = .depth_stencil_attachment_optimal,
+    };
+
+    const depth_attachment_ref = vk.AttachmentReference{
+        .attachment = 1,
+        .layout = .depth_stencil_attachment_optimal,
+    };
+
+    const subpass = vk.SubpassDescription{
+        .pipeline_bind_point = .graphics,
+        .color_attachment_count = 1,
+        .p_color_attachments = @ptrCast(&color_attachment_ref),
+        .p_depth_stencil_attachment = @ptrCast(&depth_attachment_ref),
+    };
+
+    const dependency = vk.SubpassDependency{
+        .src_subpass = vk.SUBPASS_EXTERNAL,
+        .dst_subpass = 0,
+        .src_stage_mask = .{ .color_attachment_output_bit = true },
+        .src_access_mask = .{},
+        .dst_stage_mask = .{ .color_attachment_output_bit = true },
+        .dst_access_mask = .{ .color_attachment_write_bit = true },
+    };
+
+    const depth_dependency = vk.SubpassDependency{
+        .src_subpass = vk.SUBPASS_EXTERNAL,
+        .dst_subpass = 0,
+        .src_stage_mask = .{ .early_fragment_tests_bit = true, .late_fragment_tests_bit = true },
+        .src_access_mask = .{},
+        .dst_stage_mask = .{ .early_fragment_tests_bit = true, .late_fragment_tests_bit = true },
+        .dst_access_mask = .{ .depth_stencil_attachment_write_bit = true },
+    };
+
+    const attachments = [_]vk.AttachmentDescription{ color_attachment, depth_attachment };
+    const dependencies = [_]vk.SubpassDependency{ dependency, depth_dependency };
+    const render_pass_info = vk.RenderPassCreateInfo{
+        .attachment_count = attachments.len,
+        .p_attachments = &attachments,
+        .subpass_count = 1,
+        .p_subpasses = @ptrCast(&subpass),
+        .dependency_count = dependencies.len,
+        .p_dependencies = &dependencies,
+    };
+
+    return vkd().createRenderPass(device, &render_pass_info, null);
+}
