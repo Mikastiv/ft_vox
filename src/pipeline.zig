@@ -1,6 +1,7 @@
 const std = @import("std");
 const vk = @import("vulkan-zig");
 const vkk = @import("vk-kickstart");
+const mesh = @import("mesh.zig");
 
 const assert = std.debug.assert;
 
@@ -11,6 +12,7 @@ pub const Builder = struct {
 
     pub const Config = struct {
         layout: vk.PipelineLayout,
+        vertex_input_description: mesh.VertexInputDescription,
         render_pass: vk.RenderPass,
         vertex_shader: vk.ShaderModule,
         fragment_shader: vk.ShaderModule,
@@ -25,13 +27,14 @@ pub const Builder = struct {
         blend_mode: BlendMode = .none,
     };
 
+    layout: vk.PipelineLayout,
+    vertex_input_description: mesh.VertexInputDescription,
     render_pass: vk.RenderPass,
     shader_stages: [2]vk.PipelineShaderStageCreateInfo,
     input_assembly: vk.PipelineInputAssemblyStateCreateInfo,
     rasterizer: vk.PipelineRasterizationStateCreateInfo,
     color_blend_attachment: vk.PipelineColorBlendAttachmentState,
     multisampling: vk.PipelineMultisampleStateCreateInfo,
-    layout: vk.PipelineLayout,
     depth_stencil: vk.PipelineDepthStencilStateCreateInfo,
     color_attachment_format: vk.Format,
     depth_attachment_format: vk.Format,
@@ -45,6 +48,7 @@ pub const Builder = struct {
         if (config.enable_depth) assert(config.depth_attachment_format != .undefined);
 
         return .{
+            .vertex_input_description = config.vertex_input_description,
             .render_pass = config.render_pass,
             .layout = config.layout,
             .color_attachment_format = config.color_attachment_format,
@@ -149,7 +153,12 @@ pub const Builder = struct {
             .p_attachments = @ptrCast(&self.color_blend_attachment),
         };
 
-        const vertex_input_info: vk.PipelineVertexInputStateCreateInfo = .{};
+        const vertex_input_info: vk.PipelineVertexInputStateCreateInfo = .{
+            .vertex_binding_description_count = self.vertex_input_description.bindings.len,
+            .p_vertex_binding_descriptions = &self.vertex_input_description.bindings,
+            .vertex_attribute_description_count = self.vertex_input_description.attributes.len,
+            .p_vertex_attribute_descriptions = &self.vertex_input_description.attributes,
+        };
 
         const dynamic_states = [_]vk.DynamicState{ .viewport, .scissor };
         const dynamic_info: vk.PipelineDynamicStateCreateInfo = .{

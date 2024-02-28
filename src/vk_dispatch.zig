@@ -33,6 +33,8 @@ pub const device = vk.DeviceCommandFlags{
     .allocateCommandBuffers = true,
     .allocateMemory = true,
     .freeMemory = true,
+    .mapMemory = true,
+    .unmapMemory = true,
     .bindImageMemory = true,
     .bindBufferMemory = true,
     .beginCommandBuffer = true,
@@ -50,4 +52,6 @@ pub const device = vk.DeviceCommandFlags{
     .cmdBindPipeline = true,
     .cmdDraw = true,
     .cmdEndRenderPass = true,
+    .cmdCopyBuffer = true,
+    .cmdBindVertexBuffers = true,
 };

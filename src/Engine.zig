@@ -7,6 +7,7 @@ const vk_init = @import("vk_init.zig");
 const vk_utils = @import("vk_utils.zig");
 const pipeline = @import("pipeline.zig");
 const shaders = @import("shaders");
+const mesh = @import("mesh.zig");
 
 const assert = std.debug.assert;
 
@@ -64,6 +65,7 @@ default_pipeline_layout: vk.PipelineLayout,
 default_pipeline: vk.Pipeline,
 
 staging_buffer: AllocatedBuffer,
+vertex_buffer: AllocatedBuffer,
 
 deletion_queue: vk_utils.DeletionQueue,
 
@@ -152,9 +154,23 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
         physical_device.handle,
         staging_buffer_size,
         .{ .transfer_src_bit = true },
-        .{ .host_coherent_bit = true, .host_visible_bit = true },
+        .{ .host_visible_bit = true },
     );
     try deletion_queue.appendBuffer(staging_buffer);
+
+    const vertices = try allocator.alloc(mesh.Vertex, 36);
+    const cube = mesh.generateCube(.{ .north = true }, vertices);
+    const vertex_buffer = try createBuffer(
+        device.handle,
+        physical_device.handle,
+        @sizeOf(mesh.Vertex) * cube.len,
+        .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
+        .{ .device_local_bit = true },
+    );
+    try deletion_queue.appendBuffer(vertex_buffer);
+
+    assert(cube.len == 6);
+    try uploadMesh(device.handle, device.graphics_queue, immediate_context, staging_buffer, vertex_buffer, cube);
 
     return .{
         .window = window,
@@ -174,6 +190,7 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
         .default_pipeline = default_pipeline,
         .frames = frames,
         .staging_buffer = staging_buffer,
+        .vertex_buffer = vertex_buffer,
     };
 }
 
@@ -255,7 +272,9 @@ fn draw(self: *@This()) !void {
     };
     vkd().cmdSetScissor(cmd, 0, 1, @ptrCast(&scissor));
 
-    vkd().cmdDraw(cmd, 3, 1, 0, 0);
+    vkd().cmdBindVertexBuffers(cmd, 0, 1, @ptrCast(&self.vertex_buffer.handle), &[_]vk.DeviceSize{0});
+
+    vkd().cmdDraw(cmd, 6, 1, 0, 0);
 
     vkd().cmdEndRenderPass(cmd);
     try vkd().endCommandBuffer(cmd);
@@ -280,9 +299,53 @@ fn draw(self: *@This()) !void {
         .p_image_indices = @ptrCast(&image_index),
     };
     const present_result = try vkd().queuePresentKHR(self.device.graphics_queue, &present_info);
-    std.debug.assert(present_result == .success);
+    assert(present_result == .success);
 
+    assert(self.frame_number != std.math.maxInt(u64));
     self.frame_number += 1;
+}
+
+fn uploadMesh(
+    device: vk.Device,
+    queue: vk.Queue,
+    immediate_ctx: ImmediateContext,
+    staging_buffer: AllocatedBuffer,
+    dst_buffer: AllocatedBuffer,
+    vertices: []const mesh.Vertex,
+) !void {
+    assert(device != .null_handle);
+    assert(queue != .null_handle);
+    assert(immediate_ctx.command_buffer != .null_handle);
+    assert(immediate_ctx.command_pool != .null_handle);
+    assert(immediate_ctx.fence != .null_handle);
+
+    const size = @sizeOf(mesh.Vertex) * vertices.len;
+    assert(size <= staging_buffer_size);
+
+    {
+        const data = try vkd().mapMemory(device, staging_buffer.memory, 0, size, .{});
+        defer vkd().unmapMemory(device, staging_buffer.memory);
+
+        const ptr: [*]mesh.Vertex = @ptrCast(@alignCast(data));
+        @memcpy(ptr, vertices);
+    }
+
+    const MeshCopy = struct {
+        staging_buffer: vk.Buffer,
+        dst_buffer: vk.Buffer,
+        size: vk.DeviceSize,
+
+        fn recordCommands(ctx: @This(), cmd: vk.CommandBuffer) void {
+            const copy = vk.BufferCopy{ .size = ctx.size, .src_offset = 0, .dst_offset = 0 };
+            vkd().cmdCopyBuffer(cmd, ctx.staging_buffer, ctx.dst_buffer, 1, @ptrCast(&copy));
+        }
+    };
+
+    try immediateSubmit(device, queue, immediate_ctx, MeshCopy{
+        .staging_buffer = staging_buffer.handle,
+        .dst_buffer = dst_buffer.handle,
+        .size = size,
+    });
 }
 
 fn currentFrame(self: *const @This()) *const FrameData {
@@ -298,7 +361,7 @@ fn immediateSubmit(device: vk.Device, queue: vk.Queue, ctx: ImmediateContext, su
 
     const cmd = ctx.command_buffer;
 
-    const cmd_begin_info = vk_init.commandBufferBeginInfo(.{ .one_time_submit_bit = true });
+    const cmd_begin_info: vk.CommandBufferBeginInfo = .{ .flags = .{ .one_time_submit_bit = true } };
     try vkd().beginCommandBuffer(cmd, &cmd_begin_info);
 
     submit_ctx.recordCommands(cmd);
@@ -368,6 +431,7 @@ fn createDefaultPipeline(
     defer vkd().destroyShaderModule(device, fragment_shader, null);
 
     const builder = pipeline.Builder.init(.{
+        .vertex_input_description = mesh.Vertex.getInputDescription(),
         .render_pass = render_pass,
         .vertex_shader = vertex_shader,
         .fragment_shader = fragment_shader,
