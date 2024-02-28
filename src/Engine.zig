@@ -195,7 +195,7 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     try deletion_queue.appendBuffer(staging_buffer);
 
     const vertices = try allocator.alloc(mesh.Vertex, 36);
-    const cube = mesh.generateCube(.{ .north = true }, vertices);
+    const cube = mesh.generateCube(.{ .front = true, .back = true, .west = true, .east = true, .north = true, .south = true }, vertices);
     const vertex_buffer = try createBuffer(
         device.handle,
         physical_device.handle,
@@ -352,12 +352,15 @@ fn draw(self: *@This()) !void {
     vkd().cmdBindVertexBuffers(cmd, 0, 1, @ptrCast(&self.vertex_buffer.handle), &[_]vk.DeviceSize{0});
     vkd().cmdBindDescriptorSets(cmd, .graphics, self.default_pipeline_layout, 0, 1, @ptrCast(&self.descriptor_set), 1, @ptrCast(&uniform_offset));
 
+    var model = math.mat.identity(math.Mat4);
+    model = math.mat.rotate(&model, std.math.degreesToRadians(f32, 45), .{ 1, 0, 0 });
+    model = math.mat.rotate(&model, std.math.degreesToRadians(f32, 45), .{ 0, 1, 0 });
     const push_constants: GpuPushConstants = .{
-        .model = math.mat.rotation(std.math.degreesToRadians(f32, 45), .{ 0, 1, 0 }),
+        .model = model,
     };
     vkd().cmdPushConstants(cmd, self.default_pipeline_layout, .{ .vertex_bit = true }, 0, @sizeOf(GpuPushConstants), @ptrCast(&push_constants));
 
-    vkd().cmdDraw(cmd, 6, 1, 0, 0);
+    vkd().cmdDraw(cmd, 36, 1, 0, 0);
 
     vkd().cmdEndRenderPass(cmd);
     try vkd().endCommandBuffer(cmd);
@@ -521,7 +524,7 @@ fn createDefaultPipeline(
         .layout = layout,
         .topology = .triangle_list,
         .polygon_mode = .fill,
-        .cull_mode = .{},
+        .cull_mode = .{ .back_bit = true },
         .front_face = .counter_clockwise,
         .enable_depth = true,
         .depth_compare_op = .greater_or_equal,
