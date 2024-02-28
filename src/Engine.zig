@@ -27,16 +27,29 @@ const ImmediateContext = struct {
     fence: vk.Fence,
 };
 
+const frame_overlap = 2;
+
+const FrameData = struct {
+    command_pool: vk.CommandPool,
+    command_buffer: vk.CommandBuffer,
+    swapchain_semaphore: vk.Semaphore,
+    render_semaphore: vk.Semaphore,
+    render_fence: vk.Fence,
+};
+
 window: *Window,
 surface: vk.SurfaceKHR,
 instance: vkk.Instance,
 physical_device: vkk.PhysicalDevice,
 device: vkk.Device,
+
 swapchain: vkk.Swapchain,
 swapchain_images: []vk.Image,
 swapchain_image_views: []vk.ImageView,
 depth_image: AllocatedImage,
 framebuffers: []vk.Framebuffer,
+
+frames: [frame_overlap]FrameData,
 
 immediate_context: ImmediateContext,
 render_pass: vk.RenderPass,
@@ -109,6 +122,8 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     try deletion_queue.append(immediate_context.fence);
     try deletion_queue.append(immediate_context.command_pool);
 
+    const frames = try createFrameData(device.handle, device.graphics_queue_index, &deletion_queue);
+
     const default_pipeline_layout = try vkd().createPipelineLayout(device.handle, &.{}, null);
     try deletion_queue.append(default_pipeline_layout);
 
@@ -137,6 +152,7 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
         .deletion_queue = deletion_queue,
         .default_pipeline_layout = default_pipeline_layout,
         .default_pipeline = default_pipeline,
+        .frames = frames,
     };
 }
 
@@ -191,6 +207,39 @@ fn immediateSubmit(device: vk.Device, queue: vk.Queue, ctx: ImmediateContext, su
     try vkd().resetFences(device, 1, @ptrCast(&ctx.fence));
 
     try vkd().resetCommandPool(device, ctx.command_pool, .{});
+}
+
+fn createFrameData(
+    device: vk.Device,
+    queue_family_index: u32,
+    deletion_queue: *vk_utils.DeletionQueue,
+) ![frame_overlap]FrameData {
+    assert(device != .null_handle);
+
+    var frames: [frame_overlap]FrameData = undefined;
+
+    const command_pool_info: vk.CommandPoolCreateInfo = .{ .queue_family_index = queue_family_index };
+    const fence_info: vk.FenceCreateInfo = .{ .flags = .{ .signaled_bit = true } };
+    const semaphore_info: vk.SemaphoreCreateInfo = .{};
+
+    for (&frames) |*frame| {
+        frame.command_pool = try vkd().createCommandPool(device, &command_pool_info, null);
+        try deletion_queue.append(frame.command_pool);
+
+        const command_buffer_info = vk_init.commandBufferAllocateInfo(frame.command_pool);
+        try vkd().allocateCommandBuffers(device, &command_buffer_info, @ptrCast(&frame.command_buffer));
+
+        frame.render_fence = try vkd().createFence(device, &fence_info, null);
+        try deletion_queue.append(frame.render_fence);
+
+        frame.render_semaphore = try vkd().createSemaphore(device, &semaphore_info, null);
+        try deletion_queue.append(frame.render_semaphore);
+
+        frame.swapchain_semaphore = try vkd().createSemaphore(device, &semaphore_info, null);
+        try deletion_queue.append(frame.swapchain_semaphore);
+    }
+
+    return frames;
 }
 
 fn createDefaultPipeline(

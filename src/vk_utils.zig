@@ -16,6 +16,7 @@ const HandleType = enum {
     render_pass,
     pipeline_layout,
     pipeline,
+    semaphore,
 };
 
 const DeletionEntry = struct {
@@ -43,6 +44,7 @@ pub const DeletionQueue = struct {
             vk.RenderPass => .render_pass,
             vk.PipelineLayout => .pipeline_layout,
             vk.Pipeline => .pipeline,
+            vk.Semaphore => .semaphore,
             else => @compileError("unsupported type: " ++ @typeName(T)),
         };
         const handle_raw: usize = @intFromEnum(handle);
@@ -71,6 +73,7 @@ pub const DeletionQueue = struct {
                 .render_pass => vkd().destroyRenderPass(device, @enumFromInt(entry.handle), null),
                 .pipeline_layout => vkd().destroyPipelineLayout(device, @enumFromInt(entry.handle), null),
                 .pipeline => vkd().destroyPipeline(device, @enumFromInt(entry.handle), null),
+                .semaphore => vkd().destroySemaphore(device, @enumFromInt(entry.handle), null),
             }
         }
         self.entries.clearRetainingCapacity();
