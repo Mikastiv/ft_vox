@@ -19,9 +19,13 @@ const vkd = vkk.dispatch.vkd;
 const staging_buffer_size = 1024 * 1024 * 100;
 
 const GpuSceneData = extern struct {
-    view: math.Mat4,
-    proj: math.Mat4,
-    view_proj: math.Mat4,
+    view: math.Mat4 = math.mat.identity(math.Mat4),
+    proj: math.Mat4 = math.mat.identity(math.Mat4),
+    view_proj: math.Mat4 = math.mat.identity(math.Mat4),
+};
+
+const GpuPushConstants = extern struct {
+    model: math.Mat4 = math.mat.identity(math.Mat4),
 };
 
 pub const AllocatedImage = struct {
@@ -78,6 +82,7 @@ vertex_buffer: AllocatedBuffer,
 scene_data_buffer: AllocatedBuffer,
 
 descriptor_set: vk.DescriptorSet,
+scene_data: GpuSceneData = .{},
 
 deletion_queue: vk_utils.DeletionQueue,
 
@@ -149,7 +154,26 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
 
     const frames = try createFrameData(device.handle, device.graphics_queue_index, &deletion_queue);
 
-    const default_pipeline_layout = try vkd().createPipelineLayout(device.handle, &.{}, null);
+    var descriptor_layout_builder = try descriptor.LayoutBuilder.init(allocator, 10);
+    try descriptor_layout_builder.addBinding(0, .uniform_buffer_dynamic);
+    const descriptor_layout = try descriptor_layout_builder.build(device.handle, .{ .vertex_bit = true, .fragment_bit = true });
+    try deletion_queue.append(descriptor_layout);
+
+    const push_constant_range: vk.PushConstantRange = .{
+        .offset = 0,
+        .size = @sizeOf(GpuPushConstants),
+        .stage_flags = .{ .vertex_bit = true },
+    };
+    const default_pipeline_layout = try vkd().createPipelineLayout(
+        device.handle,
+        &.{
+            .set_layout_count = 1,
+            .p_set_layouts = @ptrCast(&descriptor_layout),
+            .push_constant_range_count = 1,
+            .p_push_constant_ranges = @ptrCast(&push_constant_range),
+        },
+        null,
+    );
     try deletion_queue.append(default_pipeline_layout);
 
     const default_pipeline = try createDefaultPipeline(
@@ -192,14 +216,9 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
         physical_device.handle,
         global_scene_data_size,
         .{ .uniform_buffer_bit = true },
-        .{ .host_visible_bit = true },
+        .{ .host_visible_bit = true, .host_coherent_bit = true },
     );
     try deletion_queue.appendBuffer(scene_data_buffer);
-
-    var descriptor_layout_builder = try descriptor.LayoutBuilder.init(allocator, 10);
-    try descriptor_layout_builder.addBinding(0, .uniform_buffer_dynamic);
-    const descriptor_layout = try descriptor_layout_builder.build(device.handle, .{ .vertex_bit = true, .fragment_bit = true });
-    try deletion_queue.append(descriptor_layout);
 
     const ratios = [_]descriptor.Allocator.PoolSizeRatio{
         .{ .type = .uniform_buffer_dynamic, .ratio = 1 },
@@ -208,6 +227,10 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     try deletion_queue.append(descriptor_allocator.pool);
 
     const descriptor_set = try descriptor_allocator.alloc(device.handle, descriptor_layout);
+
+    var writer = descriptor.Writer.init(allocator);
+    try writer.writeBuffer(0, scene_data_buffer.handle, @sizeOf(GpuSceneData), 0, .uniform_buffer_dynamic);
+    writer.updateSet(device.handle, descriptor_set);
 
     return .{
         .window = window,
@@ -278,6 +301,21 @@ fn draw(self: *@This()) !void {
 
     try vkd().resetCommandPool(device, frame.command_pool, .{});
 
+    self.scene_data.view = math.mat.lookAt(.{ 0, 0, 4 }, .{ 0, 0, 0 }, .{ 0, 1, 0 });
+    self.scene_data.proj = math.mat.perspective(std.math.degreesToRadians(f32, 70), self.window.aspectRatio(), 10000, 0.1);
+    self.scene_data.view_proj = math.mat.mul(&self.scene_data.proj, &self.scene_data.view);
+
+    const alignment = std.mem.alignForward(vk.DeviceSize, @sizeOf(GpuSceneData), self.physical_device.properties.limits.min_uniform_buffer_offset_alignment);
+    const frame_index = self.frame_number % frame_overlap;
+    const uniform_offset: u32 = @intCast(alignment * frame_index);
+    {
+        const data = try vkd().mapMemory(self.device.handle, self.scene_data_buffer.memory, 0, vk.WHOLE_SIZE, .{});
+        defer vkd().unmapMemory(self.device.handle, self.scene_data_buffer.memory);
+
+        const ptr: [*]u8 = @ptrCast(@alignCast(data));
+        @memcpy(ptr[uniform_offset .. uniform_offset + @sizeOf(GpuSceneData)], std.mem.asBytes(&self.scene_data));
+    }
+
     const command_begin_info: vk.CommandBufferBeginInfo = .{ .flags = .{ .one_time_submit_bit = true } };
     try vkd().beginCommandBuffer(cmd, &command_begin_info);
 
@@ -312,6 +350,12 @@ fn draw(self: *@This()) !void {
     vkd().cmdSetScissor(cmd, 0, 1, @ptrCast(&scissor));
 
     vkd().cmdBindVertexBuffers(cmd, 0, 1, @ptrCast(&self.vertex_buffer.handle), &[_]vk.DeviceSize{0});
+    vkd().cmdBindDescriptorSets(cmd, .graphics, self.default_pipeline_layout, 0, 1, @ptrCast(&self.descriptor_set), 1, @ptrCast(&uniform_offset));
+
+    const push_constants: GpuPushConstants = .{
+        .model = math.mat.rotation(std.math.degreesToRadians(f32, 45), .{ 0, 1, 0 }),
+    };
+    vkd().cmdPushConstants(cmd, self.default_pipeline_layout, .{ .vertex_bit = true }, 0, @sizeOf(GpuPushConstants), @ptrCast(&push_constants));
 
     vkd().cmdDraw(cmd, 6, 1, 0, 0);
 

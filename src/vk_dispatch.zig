@@ -28,6 +28,7 @@ pub const device = vk.DeviceCommandFlags{
     .createDescriptorSetLayout = true,
     .destroyDescriptorSetLayout = true,
     .allocateDescriptorSets = true,
+    .updateDescriptorSets = true,
     .createPipelineLayout = true,
     .destroyPipelineLayout = true,
     .createGraphicsPipelines = true,
@@ -59,4 +60,6 @@ pub const device = vk.DeviceCommandFlags{
     .cmdEndRenderPass = true,
     .cmdCopyBuffer = true,
     .cmdBindVertexBuffers = true,
+    .cmdBindDescriptorSets = true,
+    .cmdPushConstants = true,
 };
