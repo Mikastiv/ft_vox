@@ -2,6 +2,11 @@ const std = @import("std");
 const Engine = @import("Engine.zig");
 const Window = @import("Window.zig");
 const c = @import("c.zig");
+const dispatch = @import("vk_dispatch.zig");
+
+pub const vulkan_dispatch = struct {
+    pub const device = dispatch.device;
+};
 
 const memory_size = 1024 * 1024 * 100;
 
