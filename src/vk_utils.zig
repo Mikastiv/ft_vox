@@ -46,12 +46,13 @@ pub const DeletionQueue = struct {
 
     pub fn appendImage(self: *@This(), image: Engine.AllocatedImage) !void {
         try self.append(image.handle);
-        try self.append(image.view);
         try self.append(image.memory);
+        try self.append(image.view);
     }
 
     pub fn flush(self: *@This(), device: vk.Device) void {
-        for (self.entries.items) |entry| {
+        var it = std.mem.reverseIterator(self.entries.items);
+        while (it.next()) |entry| {
             switch (entry.type) {
                 .image => vkd().destroyImage(device, @enumFromInt(entry.handle), null),
                 .image_view => vkd().destroyImageView(device, @enumFromInt(entry.handle), null),
