@@ -42,3 +42,21 @@ pub fn imageViewCreateInfo(format: vk.Format, image: vk.Image, aspect_flags: vk.
         .components = .{ .r = .identity, .g = .identity, .b = .identity, .a = .identity },
     };
 }
+
+pub fn renderPassBeginInfo(
+    render_pass: vk.RenderPass,
+    framebuffer: vk.Framebuffer,
+    extent: vk.Extent2D,
+    clear_values: []const vk.ClearValue,
+) vk.RenderPassBeginInfo {
+    return .{
+        .render_pass = render_pass,
+        .framebuffer = framebuffer,
+        .render_area = .{
+            .offset = .{ .x = 0, .y = 0 },
+            .extent = extent,
+        },
+        .clear_value_count = @intCast(clear_values.len),
+        .p_clear_values = clear_values.ptr,
+    };
+}

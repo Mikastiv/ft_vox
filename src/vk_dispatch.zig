@@ -27,6 +27,7 @@ pub const device = vk.DeviceCommandFlags{
     .destroyPipeline = true,
     .createCommandPool = true,
     .destroyCommandPool = true,
+    .resetCommandPool = true,
     .allocateCommandBuffers = true,
     .allocateMemory = true,
     .freeMemory = true,

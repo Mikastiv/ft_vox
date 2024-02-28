@@ -58,6 +58,8 @@ default_pipeline: vk.Pipeline,
 
 deletion_queue: vk_utils.DeletionQueue,
 
+frame_number: u64 = 0,
+
 pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     const instance = try vkk.Instance.create(c.glfwGetInstanceProcAddress, .{
         .app_name = "ft_vox",
@@ -179,7 +181,73 @@ pub fn run(self: *@This()) !void {
 }
 
 fn draw(self: *@This()) !void {
-    _ = self;
+    const frame = self.currentFrame();
+    const device = self.device.handle;
+    const cmd = frame.command_buffer;
+
+    const fence_result = try vkd().waitForFences(device, 1, @ptrCast(&frame.render_fence), vk.TRUE, std.time.ns_per_s);
+    assert(fence_result == .success);
+
+    try vkd().resetFences(device, 1, @ptrCast(&frame.render_fence));
+
+    const next_image_result = try vkd().acquireNextImageKHR(
+        device,
+        self.swapchain.handle,
+        std.time.ns_per_s,
+        frame.swapchain_semaphore,
+        .null_handle,
+    );
+    assert(next_image_result.result == .success);
+
+    const image_index = next_image_result.image_index;
+
+    try vkd().resetCommandPool(device, frame.command_pool, .{});
+
+    const command_begin_info: vk.CommandBufferBeginInfo = .{ .flags = .{ .one_time_submit_bit = true } };
+    try vkd().beginCommandBuffer(cmd, &command_begin_info);
+
+    const clear_value = vk.ClearValue{ .color = .{ .float_32 = .{ 0.1, 0.1, 0.1, 1 } } };
+    const depth_clear = vk.ClearValue{ .depth_stencil = .{ .depth = 1, .stencil = 0 } };
+    const clear_values = [_]vk.ClearValue{ clear_value, depth_clear };
+
+    const render_pass_info = vk_init.renderPassBeginInfo(
+        self.render_pass,
+        self.framebuffers[image_index],
+        self.swapchain.extent,
+        &clear_values,
+    );
+    vkd().cmdBeginRenderPass(cmd, &render_pass_info, .@"inline");
+
+    vkd().cmdEndRenderPass(cmd);
+    try vkd().endCommandBuffer(cmd);
+
+    const wait_stage = vk.PipelineStageFlags{ .color_attachment_output_bit = true };
+    const submit = vk.SubmitInfo{
+        .p_wait_dst_stage_mask = @ptrCast(&wait_stage),
+        .wait_semaphore_count = 1,
+        .p_wait_semaphores = @ptrCast(&frame.swapchain_semaphore),
+        .signal_semaphore_count = 1,
+        .p_signal_semaphores = @ptrCast(&frame.render_semaphore),
+        .command_buffer_count = 1,
+        .p_command_buffers = @ptrCast(&cmd),
+    };
+    try vkd().queueSubmit(self.device.graphics_queue, 1, @ptrCast(&submit), frame.render_fence);
+
+    const present_info = vk.PresentInfoKHR{
+        .swapchain_count = 1,
+        .p_swapchains = @ptrCast(&self.swapchain.handle),
+        .wait_semaphore_count = 1,
+        .p_wait_semaphores = @ptrCast(&frame.render_semaphore),
+        .p_image_indices = @ptrCast(&image_index),
+    };
+    const present_result = try vkd().queuePresentKHR(self.device.graphics_queue, &present_info);
+    std.debug.assert(present_result == .success);
+
+    self.frame_number += 1;
+}
+
+fn currentFrame(self: *const @This()) *const FrameData {
+    return &self.frames[self.frame_number % 2];
 }
 
 fn immediateSubmit(device: vk.Device, queue: vk.Queue, ctx: ImmediateContext, submit_ctx: anytype) !void {
