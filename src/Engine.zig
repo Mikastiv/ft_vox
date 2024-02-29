@@ -264,7 +264,7 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     try writer.writeImage(1, texture_atlas.view, .shader_read_only_optimal, nearest_sampler, .combined_image_sampler);
     writer.updateSet(device.handle, descriptor_set);
 
-    return .{
+    var self: @This() = .{
         .window = window,
         .surface = surface,
         .instance = instance,
@@ -291,9 +291,14 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
         .texture_atlas = texture_atlas,
         .nearest_sampler = nearest_sampler,
     };
+
+    try self.initImGui();
+
+    return self;
 }
 
 pub fn deinit(self: *@This()) void {
+    c.cImGui_ImplVulkan_Shutdown();
     self.deletion_queue.flush(self.device.handle);
     vk_utils.destroyFrameBuffers(self.device.handle, self.framebuffers);
     vk_utils.destroyImage(self.device.handle, self.depth_image);
@@ -309,6 +314,7 @@ pub fn run(self: *@This()) !void {
     while (!self.window.shouldClose()) {
         c.glfwPollEvents();
 
+        self.renderImGuiFrame();
         try self.draw();
     }
 
@@ -400,6 +406,8 @@ fn draw(self: *@This()) !void {
 
     vkd().cmdDrawIndexed(cmd, @intCast(self.indices.items.len), 1, 0, 0, 0);
 
+    c.cImGui_ImplVulkan_RenderDrawData(c.ImGui_GetDrawData(), c.vkZigHandleToC(c.VkCommandBuffer, cmd));
+
     vkd().cmdEndRenderPass(cmd);
     try vkd().endCommandBuffer(cmd);
 
@@ -427,6 +435,18 @@ fn draw(self: *@This()) !void {
 
     assert(self.frame_number != std.math.maxInt(u64));
     self.frame_number += 1;
+}
+
+fn renderImGuiFrame(self: *@This()) void {
+    _ = self;
+
+    c.cImGui_ImplVulkan_NewFrame();
+    c.cImGui_ImplGlfw_NewFrame();
+    c.ImGui_NewFrame();
+
+    c.ImGui_ShowDemoWindow(null);
+
+    c.ImGui_Render();
 }
 
 fn uploadMesh(
@@ -516,6 +536,54 @@ pub fn immediateSubmit(device: vk.Device, queue: vk.Queue, ctx: ImmediateContext
     try vkd().resetFences(device, 1, @ptrCast(&ctx.fence));
 
     try vkd().resetCommandPool(device, ctx.command_pool, .{});
+}
+
+fn initImGui(self: *@This()) !void {
+    const pool = try createImguiDescriptorPool(self.device.handle);
+    try self.deletion_queue.append(pool);
+
+    _ = c.ImGui_CreateContext(null);
+    if (!c.cImGui_ImplGlfw_InitForVulkan(self.window.handle, true)) return error.ImGuiInitFailed;
+
+    var init_info = c.ImGui_ImplVulkan_InitInfo{
+        .Instance = c.vkZigHandleToC(c.VkInstance, self.instance.handle),
+        .PhysicalDevice = c.vkZigHandleToC(c.VkPhysicalDevice, self.physical_device.handle),
+        .Device = c.vkZigHandleToC(c.VkDevice, self.device.handle),
+        .Queue = c.vkZigHandleToC(c.VkQueue, self.device.graphics_queue),
+        .DescriptorPool = c.vkZigHandleToC(c.VkDescriptorPool, pool),
+        .MinImageCount = self.swapchain.image_count,
+        .ImageCount = self.swapchain.image_count,
+        .MSAASamples = c.VK_SAMPLE_COUNT_1_BIT,
+        .RenderPass = c.vkZigHandleToC(c.VkRenderPass, self.render_pass),
+    };
+
+    if (!c.cImGui_ImplVulkan_Init(@ptrCast(&init_info))) return error.ImGuiInitFailed;
+    if (!c.cImGui_ImplVulkan_CreateFontsTexture()) return error.ImGuiInitFailed;
+}
+
+fn createImguiDescriptorPool(device: vk.Device) !vk.DescriptorPool {
+    const pool_sizes = [_]vk.DescriptorPoolSize{
+        .{ .type = .sampler, .descriptor_count = 1000 },
+        .{ .type = .combined_image_sampler, .descriptor_count = 1000 },
+        .{ .type = .sampled_image, .descriptor_count = 1000 },
+        .{ .type = .storage_image, .descriptor_count = 1000 },
+        .{ .type = .uniform_texel_buffer, .descriptor_count = 1000 },
+        .{ .type = .storage_texel_buffer, .descriptor_count = 1000 },
+        .{ .type = .uniform_buffer, .descriptor_count = 1000 },
+        .{ .type = .storage_buffer, .descriptor_count = 1000 },
+        .{ .type = .uniform_buffer_dynamic, .descriptor_count = 1000 },
+        .{ .type = .storage_buffer_dynamic, .descriptor_count = 1000 },
+        .{ .type = .input_attachment, .descriptor_count = 1000 },
+    };
+
+    const pool_info = vk.DescriptorPoolCreateInfo{
+        .flags = .{ .free_descriptor_set_bit = true },
+        .max_sets = 1000,
+        .pool_size_count = @intCast(pool_sizes.len),
+        .p_pool_sizes = &pool_sizes,
+    };
+
+    return vkd().createDescriptorPool(device, &pool_info, null);
 }
 
 fn createFrameData(
