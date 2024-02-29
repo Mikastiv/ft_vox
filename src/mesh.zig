@@ -6,12 +6,11 @@ const assert = std.debug.assert;
 
 pub const VertexInputDescription = struct {
     bindings: [1]vk.VertexInputBindingDescription,
-    attributes: [3]vk.VertexInputAttributeDescription,
+    attributes: [2]vk.VertexInputAttributeDescription,
 };
 
 pub const Vertex = extern struct {
     pos: math.Vec3,
-    color: math.Vec3,
     uv: math.Vec2,
 
     pub fn getInputDescription() VertexInputDescription {
@@ -21,8 +20,7 @@ pub const Vertex = extern struct {
             },
             .attributes = .{
                 .{ .binding = 0, .location = 0, .format = .r32g32b32_sfloat, .offset = @offsetOf(@This(), "pos") },
-                .{ .binding = 0, .location = 1, .format = .r32g32b32_sfloat, .offset = @offsetOf(@This(), "color") },
-                .{ .binding = 0, .location = 2, .format = .r32g32_sfloat, .offset = @offsetOf(@This(), "uv") },
+                .{ .binding = 0, .location = 1, .format = .r32g32_sfloat, .offset = @offsetOf(@This(), "uv") },
             },
         };
     }
@@ -51,11 +49,15 @@ pub const Cube = struct {
     indices: []u16,
 };
 
-pub fn generateCube(sides: CubeSides, out_vertices: []Vertex, out_indices: []u16) Cube {
+pub fn generateCube(
+    sides: CubeSides,
+    out_vertices: *std.ArrayList(Vertex),
+    out_indices: *std.ArrayList(u16),
+) !Cube {
     const count: u64 = @popCount(sides.toInt());
     assert(count < 7);
-    assert(out_vertices.len >= count * 4); // 4 vertices per side
-    assert(out_indices.len >= count * 6); // 6 indices per side
+    assert(out_vertices.unusedCapacitySlice().len >= count * 4); // 4 vertices per side
+    assert(out_indices.unusedCapacitySlice().len >= count * 6); // 6 indices per side
 
     const row = 0.0;
     const col = 2.0;
@@ -69,95 +71,76 @@ pub fn generateCube(sides: CubeSides, out_vertices: []Vertex, out_indices: []u16
     const bottom_left_uv: math.Vec2 = .{ col * tile_width / tex_width, (row + 1.0) * tile_height / tex_height };
     const bottom_right_uv: math.Vec2 = .{ (col + 1.0) * tile_width / tex_width, (row + 1.0) * tile_height / tex_height };
 
-    var current_vertex: u16 = 0;
-    var current_index: u16 = 0;
+    const start_vertex = out_vertices.items.len;
+    const start_index = out_indices.items.len;
     if (sides.contains(CubeSides.front_side)) {
-        out_indices[current_index + 0] = current_vertex + 0;
-        out_indices[current_index + 1] = current_vertex + 1;
-        out_indices[current_index + 2] = current_vertex + 2;
-        out_indices[current_index + 3] = current_vertex + 0;
-        out_indices[current_index + 4] = current_vertex + 2;
-        out_indices[current_index + 5] = current_vertex + 3;
-        current_index += 6;
-        out_vertices[current_vertex + 0] = .{ .pos = .{ -0.5, 0.5, 0.5 }, .color = .{ 1, 0, 0 }, .uv = top_left_uv };
-        out_vertices[current_vertex + 1] = .{ .pos = .{ -0.5, -0.5, 0.5 }, .color = .{ 1, 0, 0 }, .uv = bottom_left_uv };
-        out_vertices[current_vertex + 2] = .{ .pos = .{ 0.5, -0.5, 0.5 }, .color = .{ 1, 0, 0 }, .uv = bottom_right_uv };
-        out_vertices[current_vertex + 3] = .{ .pos = .{ 0.5, 0.5, 0.5 }, .color = .{ 1, 0, 0 }, .uv = top_right_uv };
-        current_vertex += 4;
+        try appendIndices(@intCast(out_vertices.items.len), out_indices);
+        try out_vertices.appendSlice(&.{
+            .{ .pos = .{ -0.5, 0.5, 0.5 }, .uv = top_left_uv },
+            .{ .pos = .{ -0.5, -0.5, 0.5 }, .uv = bottom_left_uv },
+            .{ .pos = .{ 0.5, -0.5, 0.5 }, .uv = bottom_right_uv },
+            .{ .pos = .{ 0.5, 0.5, 0.5 }, .uv = top_right_uv },
+        });
     }
     if (sides.contains(CubeSides.back_side)) {
-        out_indices[current_index + 0] = current_vertex + 0;
-        out_indices[current_index + 1] = current_vertex + 1;
-        out_indices[current_index + 2] = current_vertex + 2;
-        out_indices[current_index + 3] = current_vertex + 0;
-        out_indices[current_index + 4] = current_vertex + 2;
-        out_indices[current_index + 5] = current_vertex + 3;
-        current_index += 6;
-        out_vertices[current_vertex + 0] = .{ .pos = .{ 0.5, 0.5, -0.5 }, .color = .{ 0, 1, 0 }, .uv = top_left_uv };
-        out_vertices[current_vertex + 1] = .{ .pos = .{ 0.5, -0.5, -0.5 }, .color = .{ 0, 1, 0 }, .uv = bottom_left_uv };
-        out_vertices[current_vertex + 2] = .{ .pos = .{ -0.5, -0.5, -0.5 }, .color = .{ 0, 1, 0 }, .uv = bottom_right_uv };
-        out_vertices[current_vertex + 3] = .{ .pos = .{ -0.5, 0.5, -0.5 }, .color = .{ 0, 1, 0 }, .uv = top_right_uv };
-        current_vertex += 4;
+        try appendIndices(@intCast(out_vertices.items.len), out_indices);
+        try out_vertices.appendSlice(&.{
+            .{ .pos = .{ 0.5, 0.5, -0.5 }, .uv = top_left_uv },
+            .{ .pos = .{ 0.5, -0.5, -0.5 }, .uv = bottom_left_uv },
+            .{ .pos = .{ -0.5, -0.5, -0.5 }, .uv = bottom_right_uv },
+            .{ .pos = .{ -0.5, 0.5, -0.5 }, .uv = top_right_uv },
+        });
     }
     if (sides.contains(CubeSides.west_side)) {
-        out_indices[current_index + 0] = current_vertex + 0;
-        out_indices[current_index + 1] = current_vertex + 1;
-        out_indices[current_index + 2] = current_vertex + 2;
-        out_indices[current_index + 3] = current_vertex + 0;
-        out_indices[current_index + 4] = current_vertex + 2;
-        out_indices[current_index + 5] = current_vertex + 3;
-        current_index += 6;
-        out_vertices[current_vertex + 0] = .{ .pos = .{ -0.5, 0.5, -0.5 }, .color = .{ 0, 0, 1 }, .uv = top_left_uv };
-        out_vertices[current_vertex + 1] = .{ .pos = .{ -0.5, -0.5, -0.5 }, .color = .{ 0, 0, 1 }, .uv = bottom_left_uv };
-        out_vertices[current_vertex + 2] = .{ .pos = .{ -0.5, -0.5, 0.5 }, .color = .{ 0, 0, 1 }, .uv = bottom_right_uv };
-        out_vertices[current_vertex + 3] = .{ .pos = .{ -0.5, 0.5, 0.5 }, .color = .{ 0, 0, 1 }, .uv = top_right_uv };
-        current_vertex += 4;
+        try appendIndices(@intCast(out_vertices.items.len), out_indices);
+        try out_vertices.appendSlice(&.{
+            .{ .pos = .{ -0.5, 0.5, -0.5 }, .uv = top_left_uv },
+            .{ .pos = .{ -0.5, -0.5, -0.5 }, .uv = bottom_left_uv },
+            .{ .pos = .{ -0.5, -0.5, 0.5 }, .uv = bottom_right_uv },
+            .{ .pos = .{ -0.5, 0.5, 0.5 }, .uv = top_right_uv },
+        });
     }
     if (sides.contains(CubeSides.east_side)) {
-        out_indices[current_index + 0] = current_vertex + 0;
-        out_indices[current_index + 1] = current_vertex + 1;
-        out_indices[current_index + 2] = current_vertex + 2;
-        out_indices[current_index + 3] = current_vertex + 0;
-        out_indices[current_index + 4] = current_vertex + 2;
-        out_indices[current_index + 5] = current_vertex + 3;
-        current_index += 6;
-        out_vertices[current_vertex + 0] = .{ .pos = .{ 0.5, 0.5, 0.5 }, .color = .{ 0, 1, 1 }, .uv = top_left_uv };
-        out_vertices[current_vertex + 1] = .{ .pos = .{ 0.5, -0.5, 0.5 }, .color = .{ 0, 1, 1 }, .uv = bottom_left_uv };
-        out_vertices[current_vertex + 2] = .{ .pos = .{ 0.5, -0.5, -0.5 }, .color = .{ 0, 1, 1 }, .uv = bottom_right_uv };
-        out_vertices[current_vertex + 3] = .{ .pos = .{ 0.5, 0.5, -0.5 }, .color = .{ 0, 1, 1 }, .uv = top_right_uv };
-        current_vertex += 4;
+        try appendIndices(@intCast(out_vertices.items.len), out_indices);
+        try out_vertices.appendSlice(&.{
+            .{ .pos = .{ 0.5, 0.5, 0.5 }, .uv = top_left_uv },
+            .{ .pos = .{ 0.5, -0.5, 0.5 }, .uv = bottom_left_uv },
+            .{ .pos = .{ 0.5, -0.5, -0.5 }, .uv = bottom_right_uv },
+            .{ .pos = .{ 0.5, 0.5, -0.5 }, .uv = top_right_uv },
+        });
     }
     if (sides.contains(CubeSides.south_side)) {
-        out_indices[current_index + 0] = current_vertex + 0;
-        out_indices[current_index + 1] = current_vertex + 1;
-        out_indices[current_index + 2] = current_vertex + 2;
-        out_indices[current_index + 3] = current_vertex + 0;
-        out_indices[current_index + 4] = current_vertex + 2;
-        out_indices[current_index + 5] = current_vertex + 3;
-        current_index += 6;
-        out_vertices[current_vertex + 0] = .{ .pos = .{ -0.5, -0.5, 0.5 }, .color = .{ 1, 1, 0 }, .uv = top_left_uv };
-        out_vertices[current_vertex + 1] = .{ .pos = .{ -0.5, -0.5, -0.5 }, .color = .{ 1, 1, 0 }, .uv = bottom_left_uv };
-        out_vertices[current_vertex + 2] = .{ .pos = .{ 0.5, -0.5, -0.5 }, .color = .{ 1, 1, 0 }, .uv = bottom_right_uv };
-        out_vertices[current_vertex + 3] = .{ .pos = .{ 0.5, -0.5, 0.5 }, .color = .{ 1, 1, 0 }, .uv = top_right_uv };
-        current_vertex += 4;
+        try appendIndices(@intCast(out_vertices.items.len), out_indices);
+        try out_vertices.appendSlice(&.{
+            .{ .pos = .{ -0.5, -0.5, 0.5 }, .uv = top_left_uv },
+            .{ .pos = .{ -0.5, -0.5, -0.5 }, .uv = bottom_left_uv },
+            .{ .pos = .{ 0.5, -0.5, -0.5 }, .uv = bottom_right_uv },
+            .{ .pos = .{ 0.5, -0.5, 0.5 }, .uv = top_right_uv },
+        });
     }
     if (sides.contains(CubeSides.north_side)) {
-        out_indices[current_index + 0] = current_vertex + 0;
-        out_indices[current_index + 1] = current_vertex + 1;
-        out_indices[current_index + 2] = current_vertex + 2;
-        out_indices[current_index + 3] = current_vertex + 0;
-        out_indices[current_index + 4] = current_vertex + 2;
-        out_indices[current_index + 5] = current_vertex + 3;
-        current_index += 6;
-        out_vertices[current_vertex + 0] = .{ .pos = .{ -0.5, 0.5, -0.5 }, .color = .{ 1, 0, 1 }, .uv = top_left_uv };
-        out_vertices[current_vertex + 1] = .{ .pos = .{ -0.5, 0.5, 0.5 }, .color = .{ 1, 0, 1 }, .uv = bottom_left_uv };
-        out_vertices[current_vertex + 2] = .{ .pos = .{ 0.5, 0.5, 0.5 }, .color = .{ 1, 0, 1 }, .uv = bottom_right_uv };
-        out_vertices[current_vertex + 3] = .{ .pos = .{ 0.5, 0.5, -0.5 }, .color = .{ 1, 0, 1 }, .uv = top_right_uv };
-        current_vertex += 4;
+        try appendIndices(@intCast(out_vertices.items.len), out_indices);
+        try out_vertices.appendSlice(&.{
+            .{ .pos = .{ -0.5, 0.5, -0.5 }, .uv = top_left_uv },
+            .{ .pos = .{ -0.5, 0.5, 0.5 }, .uv = bottom_left_uv },
+            .{ .pos = .{ 0.5, 0.5, 0.5 }, .uv = bottom_right_uv },
+            .{ .pos = .{ 0.5, 0.5, -0.5 }, .uv = top_right_uv },
+        });
     }
 
     return .{
-        .vertices = out_vertices[0..current_vertex],
-        .indices = out_indices[0..current_index],
+        .vertices = out_vertices.items[start_vertex..out_vertices.items.len],
+        .indices = out_indices.items[start_index..out_indices.items.len],
     };
+}
+
+fn appendIndices(initial_vertex: u16, out_indices: *std.ArrayList(u16)) !void {
+    try out_indices.appendSlice(&.{
+        initial_vertex + 0,
+        initial_vertex + 1,
+        initial_vertex + 2,
+        initial_vertex + 0,
+        initial_vertex + 2,
+        initial_vertex + 3,
+    });
 }

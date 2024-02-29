@@ -83,6 +83,9 @@ vertex_buffer: AllocatedBuffer,
 index_buffer: AllocatedBuffer,
 scene_data_buffer: AllocatedBuffer,
 
+vertices: std.ArrayList(mesh.Vertex),
+indices: std.ArrayList(u16),
+
 descriptor_set: vk.DescriptorSet,
 scene_data: GpuSceneData = .{},
 texture_atlas: AllocatedImage,
@@ -206,14 +209,18 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     const nearest_sampler = try vkd().createSampler(device.handle, &nearest_sampler_info, null);
     try deletion_queue.append(nearest_sampler);
 
-    const vertices = try allocator.alloc(mesh.Vertex, 24);
-    const indices = try allocator.alloc(u16, 36);
-    const cube = mesh.generateCube(.{ .front = true, .back = true, .west = true, .east = true, .north = true, .south = true }, vertices, indices);
+    var vertices = try std.ArrayList(mesh.Vertex).initCapacity(allocator, 512);
+    var indices = try std.ArrayList(u16).initCapacity(allocator, 512);
+    const cube = try mesh.generateCube(
+        .{ .front = true, .back = true, .west = true, .east = true, .north = true, .south = true },
+        &vertices,
+        &indices,
+    );
 
     const vertex_buffer = try vk_utils.createBuffer(
         device.handle,
         physical_device.handle,
-        @sizeOf(mesh.Vertex) * cube.vertices.len,
+        @sizeOf(mesh.Vertex) * vertices.items.len,
         .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
         .{ .device_local_bit = true },
     );
@@ -222,7 +229,7 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     const index_buffer = try vk_utils.createBuffer(
         device.handle,
         physical_device.handle,
-        @sizeOf(u16) * indices.len,
+        @sizeOf(u16) * indices.items.len,
         .{ .transfer_dst_bit = true, .index_buffer_bit = true },
         .{ .device_local_bit = true },
     );
@@ -274,6 +281,8 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
         .default_pipeline_layout = default_pipeline_layout,
         .default_pipeline = default_pipeline,
         .frames = frames,
+        .vertices = vertices,
+        .indices = indices,
         .staging_buffer = staging_buffer,
         .vertex_buffer = vertex_buffer,
         .index_buffer = index_buffer,
@@ -389,7 +398,7 @@ fn draw(self: *@This()) !void {
     };
     vkd().cmdPushConstants(cmd, self.default_pipeline_layout, .{ .vertex_bit = true }, 0, @sizeOf(GpuPushConstants), @ptrCast(&push_constants));
 
-    vkd().cmdDrawIndexed(cmd, 36, 1, 0, 0, 0);
+    vkd().cmdDrawIndexed(cmd, @intCast(self.indices.items.len), 1, 0, 0, 0);
 
     vkd().cmdEndRenderPass(cmd);
     try vkd().endCommandBuffer(cmd);
