@@ -166,16 +166,7 @@ pub const Builder = struct {
             .p_dynamic_states = &dynamic_states,
         };
 
-        const render_info: vk.PipelineRenderingCreateInfo = .{
-            .view_mask = 0,
-            .color_attachment_count = 1,
-            .p_color_attachment_formats = @ptrCast(&self.color_attachment_format),
-            .depth_attachment_format = self.depth_attachment_format,
-            .stencil_attachment_format = .undefined,
-        };
-
         const pipeline_info: vk.GraphicsPipelineCreateInfo = .{
-            .p_next = &render_info,
             .stage_count = self.shader_stages.len,
             .p_stages = &self.shader_stages,
             .p_vertex_input_state = &vertex_input_info,
