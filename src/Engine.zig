@@ -85,6 +85,7 @@ scene_data_buffer: AllocatedBuffer,
 
 vertices: std.ArrayList(mesh.Vertex),
 indices: std.ArrayList(u16),
+rotation: math.Vec3 = .{ 0, 0, 0 },
 
 descriptor_set: vk.DescriptorSet,
 scene_data: GpuSceneData = .{},
@@ -397,8 +398,9 @@ fn draw(self: *@This()) !void {
     vkd().cmdBindDescriptorSets(cmd, .graphics, self.default_pipeline_layout, 0, 1, @ptrCast(&self.descriptor_set), 1, @ptrCast(&uniform_offset));
 
     var model = math.mat.identity(math.Mat4);
-    model = math.mat.rotate(&model, std.math.degreesToRadians(f32, -45), .{ 1, 0, 0 });
-    model = math.mat.rotate(&model, std.math.degreesToRadians(f32, -45), .{ 0, 1, 0 });
+    model = math.mat.rotate(&model, std.math.degreesToRadians(f32, self.rotation[0]), .{ 1, 0, 0 });
+    model = math.mat.rotate(&model, std.math.degreesToRadians(f32, self.rotation[1]), .{ 0, 1, 0 });
+    model = math.mat.rotate(&model, std.math.degreesToRadians(f32, self.rotation[2]), .{ 0, 0, 1 });
     const push_constants: GpuPushConstants = .{
         .model = model,
     };
@@ -438,13 +440,15 @@ fn draw(self: *@This()) !void {
 }
 
 fn renderImGuiFrame(self: *@This()) void {
-    _ = self;
-
     c.cImGui_ImplVulkan_NewFrame();
     c.cImGui_ImplGlfw_NewFrame();
     c.ImGui_NewFrame();
 
-    c.ImGui_ShowDemoWindow(null);
+    if (c.ImGui_Begin("model", null, c.ImGuiWindowFlags_None)) {
+        _ = c.ImGui_SliderFloat3("rotation", @ptrCast(&self.rotation), 0, 360);
+
+        c.ImGui_End();
+    }
 
     c.ImGui_Render();
 }

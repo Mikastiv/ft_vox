@@ -281,7 +281,7 @@ pub fn createBuffer(
         property_flags,
     ) orelse return error.NoSuitableMemoryType;
 
-    const alloc_info = vk.MemoryAllocateInfo{
+    const alloc_info: vk.MemoryAllocateInfo = .{
         .allocation_size = requirements.size,
         .memory_type_index = memory_type,
     };
@@ -323,7 +323,7 @@ pub fn createImage(
         property_flags,
     ) orelse return error.NoSuitableMemoryType;
 
-    const alloc_info = vk.MemoryAllocateInfo{
+    const alloc_info: vk.MemoryAllocateInfo = .{
         .allocation_size = requirements.size,
         .memory_type_index = memory_type,
     };
