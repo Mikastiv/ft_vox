@@ -59,6 +59,7 @@ pub const device = vk.DeviceCommandFlags{
     .cmdSetScissor = true,
     .cmdBindPipeline = true,
     .cmdDraw = true,
+    .cmdDrawIndexed = true,
     .cmdEndRenderPass = true,
     .cmdCopyBuffer = true,
     .cmdBindVertexBuffers = true,
@@ -66,4 +67,5 @@ pub const device = vk.DeviceCommandFlags{
     .cmdPushConstants = true,
     .cmdPipelineBarrier = true,
     .cmdCopyBufferToImage = true,
+    .cmdBindIndexBuffer = true,
 };

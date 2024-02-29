@@ -80,6 +80,7 @@ default_pipeline: vk.Pipeline,
 
 staging_buffer: AllocatedBuffer,
 vertex_buffer: AllocatedBuffer,
+index_buffer: AllocatedBuffer,
 scene_data_buffer: AllocatedBuffer,
 
 descriptor_set: vk.DescriptorSet,
@@ -205,18 +206,29 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     const nearest_sampler = try vkd().createSampler(device.handle, &nearest_sampler_info, null);
     try deletion_queue.append(nearest_sampler);
 
-    const vertices = try allocator.alloc(mesh.Vertex, 36);
-    const cube = mesh.generateCube(.{ .front = true, .back = true, .west = true, .east = true, .north = true, .south = true }, vertices);
+    const vertices = try allocator.alloc(mesh.Vertex, 24);
+    const indices = try allocator.alloc(u16, 36);
+    const cube = mesh.generateCube(.{ .front = true, .back = true, .west = true, .east = true, .north = true, .south = true }, vertices, indices);
+
     const vertex_buffer = try vk_utils.createBuffer(
         device.handle,
         physical_device.handle,
-        @sizeOf(mesh.Vertex) * cube.len,
+        @sizeOf(mesh.Vertex) * cube.vertices.len,
         .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
         .{ .device_local_bit = true },
     );
     try deletion_queue.appendBuffer(vertex_buffer);
 
-    try uploadMesh(device.handle, device.graphics_queue, immediate_context, staging_buffer, vertex_buffer, cube);
+    const index_buffer = try vk_utils.createBuffer(
+        device.handle,
+        physical_device.handle,
+        @sizeOf(u16) * indices.len,
+        .{ .transfer_dst_bit = true, .index_buffer_bit = true },
+        .{ .device_local_bit = true },
+    );
+    try deletion_queue.appendBuffer(index_buffer);
+
+    try uploadMesh(device.handle, device.graphics_queue, immediate_context, staging_buffer, vertex_buffer, index_buffer, cube.vertices, cube.indices);
 
     const min_alignment = physical_device.properties.limits.min_uniform_buffer_offset_alignment;
     assert(min_alignment > 0);
@@ -264,6 +276,7 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
         .frames = frames,
         .staging_buffer = staging_buffer,
         .vertex_buffer = vertex_buffer,
+        .index_buffer = index_buffer,
         .scene_data_buffer = scene_data_buffer,
         .descriptor_set = descriptor_set,
         .texture_atlas = texture_atlas,
@@ -365,6 +378,7 @@ fn draw(self: *@This()) !void {
     vkd().cmdSetScissor(cmd, 0, 1, @ptrCast(&scissor));
 
     vkd().cmdBindVertexBuffers(cmd, 0, 1, @ptrCast(&self.vertex_buffer.handle), &[_]vk.DeviceSize{0});
+    vkd().cmdBindIndexBuffer(cmd, self.index_buffer.handle, 0, .uint16);
     vkd().cmdBindDescriptorSets(cmd, .graphics, self.default_pipeline_layout, 0, 1, @ptrCast(&self.descriptor_set), 1, @ptrCast(&uniform_offset));
 
     var model = math.mat.identity(math.Mat4);
@@ -375,7 +389,7 @@ fn draw(self: *@This()) !void {
     };
     vkd().cmdPushConstants(cmd, self.default_pipeline_layout, .{ .vertex_bit = true }, 0, @sizeOf(GpuPushConstants), @ptrCast(&push_constants));
 
-    vkd().cmdDraw(cmd, 36, 1, 0, 0);
+    vkd().cmdDrawIndexed(cmd, 36, 1, 0, 0, 0);
 
     vkd().cmdEndRenderPass(cmd);
     try vkd().endCommandBuffer(cmd);
@@ -411,41 +425,56 @@ fn uploadMesh(
     queue: vk.Queue,
     immediate_ctx: ImmediateContext,
     staging_buffer: AllocatedBuffer,
-    dst_buffer: AllocatedBuffer,
+    vertex_buffer: AllocatedBuffer,
+    index_buffer: AllocatedBuffer,
     vertices: []const mesh.Vertex,
+    indices: []const u16,
 ) !void {
     assert(device != .null_handle);
     assert(queue != .null_handle);
+    assert(vertex_buffer.handle != .null_handle);
+    assert(vertex_buffer.memory != .null_handle);
+    assert(index_buffer.handle != .null_handle);
+    assert(index_buffer.memory != .null_handle);
     assert(immediate_ctx.command_buffer != .null_handle);
     assert(immediate_ctx.command_pool != .null_handle);
     assert(immediate_ctx.fence != .null_handle);
 
-    const size = @sizeOf(mesh.Vertex) * vertices.len;
-    assert(size <= staging_buffer_size);
+    const vertex_size = @sizeOf(mesh.Vertex) * vertices.len;
+    const index_size = @sizeOf(u16) * indices.len;
+    assert(vertex_size + index_size <= staging_buffer_size);
 
     {
-        const data = try vkd().mapMemory(device, staging_buffer.memory, 0, size, .{});
+        const data = try vkd().mapMemory(device, staging_buffer.memory, 0, vertex_size + index_size, .{});
         defer vkd().unmapMemory(device, staging_buffer.memory);
 
-        const ptr: [*]mesh.Vertex = @ptrCast(@alignCast(data));
-        @memcpy(ptr, vertices);
+        const ptr: [*]u8 = @ptrCast(@alignCast(data));
+        @memcpy(ptr[0..vertex_size], std.mem.sliceAsBytes(vertices));
+        @memcpy(ptr[vertex_size .. vertex_size + index_size], std.mem.sliceAsBytes(indices));
     }
 
     const MeshCopy = struct {
         staging_buffer: vk.Buffer,
-        dst_buffer: vk.Buffer,
-        size: vk.DeviceSize,
+        vertex_buffer: vk.Buffer,
+        vertex_size: vk.DeviceSize,
+        index_buffer: vk.Buffer,
+        index_size: vk.DeviceSize,
 
         fn recordCommands(ctx: @This(), cmd: vk.CommandBuffer) void {
-            const copy = vk.BufferCopy{ .size = ctx.size, .src_offset = 0, .dst_offset = 0 };
-            vkd().cmdCopyBuffer(cmd, ctx.staging_buffer, ctx.dst_buffer, 1, @ptrCast(&copy));
+            const vertex_copy = vk.BufferCopy{ .size = ctx.vertex_size, .src_offset = 0, .dst_offset = 0 };
+            vkd().cmdCopyBuffer(cmd, ctx.staging_buffer, ctx.vertex_buffer, 1, @ptrCast(&vertex_copy));
+
+            const index_copy = vk.BufferCopy{ .size = ctx.index_size, .src_offset = ctx.vertex_size, .dst_offset = 0 };
+            vkd().cmdCopyBuffer(cmd, ctx.staging_buffer, ctx.index_buffer, 1, @ptrCast(&index_copy));
         }
     };
 
     try immediateSubmit(device, queue, immediate_ctx, MeshCopy{
         .staging_buffer = staging_buffer.handle,
-        .dst_buffer = dst_buffer.handle,
-        .size = size,
+        .vertex_buffer = vertex_buffer.handle,
+        .vertex_size = vertex_size,
+        .index_buffer = index_buffer.handle,
+        .index_size = index_size,
     });
 }
 
