@@ -2,9 +2,11 @@ const std = @import("std");
 const vk = @import("vulkan-zig");
 const vkk = @import("vk-kickstart");
 const Engine = @import("Engine.zig");
+const vk_init = @import("vk_init.zig");
 
 const assert = std.debug.assert;
 
+const vki = vkk.dispatch.vki;
 const vkd = vkk.dispatch.vkd;
 
 const HandleType = enum {
@@ -247,4 +249,112 @@ pub fn scale(comptime T: type, value: T, factor: f32) T {
     const value_f32: f32 = @floatFromInt(value);
     const scaled = value_f32 * factor;
     return @intFromFloat(scaled);
+}
+
+pub fn createBuffer(
+    device: vk.Device,
+    physical_device: vk.PhysicalDevice,
+    size: vk.DeviceSize,
+    usage: vk.BufferUsageFlags,
+    property_flags: vk.MemoryPropertyFlags,
+) !Engine.AllocatedBuffer {
+    assert(device != .null_handle);
+    assert(physical_device != .null_handle);
+
+    const create_info: vk.BufferCreateInfo = .{
+        .size = size,
+        .usage = usage,
+        .sharing_mode = .exclusive,
+    };
+    const buffer = try vkd().createBuffer(device, &create_info, null);
+    errdefer vkd().destroyBuffer(device, buffer, null);
+
+    const requirements = vkd().getBufferMemoryRequirements(device, buffer);
+    const memory_properties = vki().getPhysicalDeviceMemoryProperties(physical_device);
+
+    const memory_type = findMemoryType(
+        memory_properties,
+        requirements.memory_type_bits,
+        property_flags,
+    ) orelse return error.NoSuitableMemoryType;
+
+    const alloc_info = vk.MemoryAllocateInfo{
+        .allocation_size = requirements.size,
+        .memory_type_index = memory_type,
+    };
+    const memory = try vkd().allocateMemory(device, &alloc_info, null);
+    errdefer vkd().freeMemory(device, memory, null);
+
+    try vkd().bindBufferMemory(device, buffer, memory, 0);
+
+    return .{
+        .handle = buffer,
+        .memory = memory,
+        .size = size,
+    };
+}
+
+pub fn createImage(
+    device: vk.Device,
+    physical_device: vk.PhysicalDevice,
+    format: vk.Format,
+    usage: vk.ImageUsageFlags,
+    extent: vk.Extent3D,
+    property_flags: vk.MemoryPropertyFlags,
+    aspect_flags: vk.ImageAspectFlags,
+) !Engine.AllocatedImage {
+    assert(device != .null_handle);
+    assert(physical_device != .null_handle);
+    assert(format != .undefined);
+
+    const image_info = vk_init.imageCreateInfo(format, usage, extent);
+    const image = try vkd().createImage(device, &image_info, null);
+    errdefer vkd().destroyImage(device, image, null);
+
+    const requirements = vkd().getImageMemoryRequirements(device, image);
+    const memory_properties = vki().getPhysicalDeviceMemoryProperties(physical_device);
+
+    const memory_type = findMemoryType(
+        memory_properties,
+        requirements.memory_type_bits,
+        property_flags,
+    ) orelse return error.NoSuitableMemoryType;
+
+    const alloc_info = vk.MemoryAllocateInfo{
+        .allocation_size = requirements.size,
+        .memory_type_index = memory_type,
+    };
+    const memory = try vkd().allocateMemory(device, &alloc_info, null);
+    errdefer vkd().freeMemory(device, memory, null);
+
+    try vkd().bindImageMemory(device, image, memory, 0);
+
+    const image_view_info = vk_init.imageViewCreateInfo(format, image, aspect_flags);
+    const image_view = try vkd().createImageView(device, &image_view_info, null);
+    errdefer vkd().destroyImageView(device, image_view, null);
+
+    return .{
+        .handle = image,
+        .view = image_view,
+        .format = format,
+        .extent = extent,
+        .memory = memory,
+    };
+}
+
+fn findMemoryType(
+    memory_properties: vk.PhysicalDeviceMemoryProperties,
+    type_filter: u32,
+    properties: vk.MemoryPropertyFlags,
+) ?u32 {
+    for (0..memory_properties.memory_type_count) |i| {
+        const memory_type = memory_properties.memory_types[i];
+        const property_flags = memory_type.property_flags;
+        const mask = @as(u32, 1) << @intCast(i);
+        if (type_filter & mask != 0 and property_flags.contains(properties)) {
+            return @intCast(i);
+        }
+    }
+
+    return null;
 }

@@ -10,6 +10,7 @@ const shaders = @import("shaders");
 const mesh = @import("mesh.zig");
 const math = @import("math.zig");
 const descriptor = @import("descriptor.zig");
+const texture = @import("texture.zig");
 
 const assert = std.debug.assert;
 
@@ -42,7 +43,7 @@ pub const AllocatedBuffer = struct {
     size: vk.DeviceSize,
 };
 
-const ImmediateContext = struct {
+pub const ImmediateContext = struct {
     command_pool: vk.CommandPool,
     command_buffer: vk.CommandBuffer,
     fence: vk.Fence,
@@ -83,6 +84,7 @@ scene_data_buffer: AllocatedBuffer,
 
 descriptor_set: vk.DescriptorSet,
 scene_data: GpuSceneData = .{},
+texture_atlas: AllocatedImage,
 
 deletion_queue: vk_utils.DeletionQueue,
 
@@ -127,7 +129,7 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     try swapchain.getImageViews(images, image_views);
     errdefer vk_utils.destroyImageViews(device.handle, image_views);
 
-    const depth_image = try createImage(
+    const depth_image = try vk_utils.createImage(
         device.handle,
         physical_device.handle,
         .d32_sfloat,
@@ -185,7 +187,7 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     );
     try deletion_queue.append(default_pipeline);
 
-    const staging_buffer = try createBuffer(
+    const staging_buffer = try vk_utils.createBuffer(
         device.handle,
         physical_device.handle,
         staging_buffer_size,
@@ -194,9 +196,12 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     );
     try deletion_queue.appendBuffer(staging_buffer);
 
+    const texture_atlas = try texture.loadFromFile(&device, staging_buffer, immediate_context, "assets/atlas.png");
+    try deletion_queue.appendImage(texture_atlas);
+
     const vertices = try allocator.alloc(mesh.Vertex, 36);
     const cube = mesh.generateCube(.{ .front = true, .back = true, .west = true, .east = true, .north = true, .south = true }, vertices);
-    const vertex_buffer = try createBuffer(
+    const vertex_buffer = try vk_utils.createBuffer(
         device.handle,
         physical_device.handle,
         @sizeOf(mesh.Vertex) * cube.len,
@@ -211,7 +216,7 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     assert(min_alignment > 0);
 
     const global_scene_data_size = std.mem.alignForward(vk.DeviceSize, @sizeOf(GpuSceneData), min_alignment) * frame_overlap;
-    const scene_data_buffer = try createBuffer(
+    const scene_data_buffer = try vk_utils.createBuffer(
         device.handle,
         physical_device.handle,
         global_scene_data_size,
@@ -253,6 +258,7 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
         .vertex_buffer = vertex_buffer,
         .scene_data_buffer = scene_data_buffer,
         .descriptor_set = descriptor_set,
+        .texture_atlas = texture_atlas,
     };
 }
 
@@ -438,7 +444,7 @@ fn currentFrame(self: *const @This()) *const FrameData {
     return &self.frames[self.frame_number % 2];
 }
 
-fn immediateSubmit(device: vk.Device, queue: vk.Queue, ctx: ImmediateContext, submit_ctx: anytype) !void {
+pub fn immediateSubmit(device: vk.Device, queue: vk.Queue, ctx: ImmediateContext, submit_ctx: anytype) !void {
     assert(device != .null_handle);
     assert(queue != .null_handle);
     assert(ctx.command_buffer != .null_handle);
@@ -555,109 +561,4 @@ fn createImmediateContext(device: vk.Device, graphics_family_index: u32) !Immedi
         .command_pool = command_pool,
         .command_buffer = command_buffer,
     };
-}
-
-fn createBuffer(
-    device: vk.Device,
-    physical_device: vk.PhysicalDevice,
-    size: vk.DeviceSize,
-    usage: vk.BufferUsageFlags,
-    property_flags: vk.MemoryPropertyFlags,
-) !AllocatedBuffer {
-    const create_info: vk.BufferCreateInfo = .{
-        .size = size,
-        .usage = usage,
-        .sharing_mode = .exclusive,
-    };
-    const buffer = try vkd().createBuffer(device, &create_info, null);
-    errdefer vkd().destroyBuffer(device, buffer, null);
-
-    const requirements = vkd().getBufferMemoryRequirements(device, buffer);
-    const memory_properties = vki().getPhysicalDeviceMemoryProperties(physical_device);
-
-    const memory_type = findMemoryType(
-        memory_properties,
-        requirements.memory_type_bits,
-        property_flags,
-    ) orelse return error.NoSuitableMemoryType;
-
-    const alloc_info = vk.MemoryAllocateInfo{
-        .allocation_size = requirements.size,
-        .memory_type_index = memory_type,
-    };
-    const memory = try vkd().allocateMemory(device, &alloc_info, null);
-    errdefer vkd().freeMemory(device, memory, null);
-
-    try vkd().bindBufferMemory(device, buffer, memory, 0);
-
-    return .{
-        .handle = buffer,
-        .memory = memory,
-        .size = size,
-    };
-}
-
-fn createImage(
-    device: vk.Device,
-    physical_device: vk.PhysicalDevice,
-    format: vk.Format,
-    usage: vk.ImageUsageFlags,
-    extent: vk.Extent3D,
-    property_flags: vk.MemoryPropertyFlags,
-    aspect_flags: vk.ImageAspectFlags,
-) !AllocatedImage {
-    assert(device != .null_handle);
-    assert(physical_device != .null_handle);
-    assert(format != .undefined);
-
-    const image_info = vk_init.imageCreateInfo(format, usage, extent);
-    const image = try vkd().createImage(device, &image_info, null);
-    errdefer vkd().destroyImage(device, image, null);
-
-    const requirements = vkd().getImageMemoryRequirements(device, image);
-    const memory_properties = vki().getPhysicalDeviceMemoryProperties(physical_device);
-
-    const memory_type = findMemoryType(
-        memory_properties,
-        requirements.memory_type_bits,
-        property_flags,
-    ) orelse return error.NoSuitableMemoryType;
-
-    const alloc_info = vk.MemoryAllocateInfo{
-        .allocation_size = requirements.size,
-        .memory_type_index = memory_type,
-    };
-    const memory = try vkd().allocateMemory(device, &alloc_info, null);
-    errdefer vkd().freeMemory(device, memory, null);
-
-    try vkd().bindImageMemory(device, image, memory, 0);
-
-    const image_view_info = vk_init.imageViewCreateInfo(format, image, aspect_flags);
-    const image_view = try vkd().createImageView(device, &image_view_info, null);
-    errdefer vkd().destroyImageView(device, image_view, null);
-
-    return .{
-        .handle = image,
-        .view = image_view,
-        .format = format,
-        .extent = extent,
-        .memory = memory,
-    };
-}
-
-fn findMemoryType(
-    memory_properties: vk.PhysicalDeviceMemoryProperties,
-    type_filter: u32,
-    properties: vk.MemoryPropertyFlags,
-) ?u32 {
-    for (0..memory_properties.memory_type_count) |i| {
-        const memory_type = memory_properties.memory_types[i];
-        const property_flags = memory_type.property_flags;
-        const mask = @as(u32, 1) << @intCast(i);
-        if (type_filter & mask != 0 and property_flags.contains(properties)) {
-            return @intCast(i);
-        }
-    }
-
-    return null;
 }
