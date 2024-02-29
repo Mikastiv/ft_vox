@@ -139,7 +139,7 @@ pub const Writer = struct {
         descriptor_type: vk.DescriptorType,
     ) !void {
         assert(image_view != .null_handle);
-        assert(layout != .null_handle);
+        assert(layout != .undefined);
         assert(sampler != .null_handle);
 
         switch (descriptor_type) {

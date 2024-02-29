@@ -85,6 +85,7 @@ scene_data_buffer: AllocatedBuffer,
 descriptor_set: vk.DescriptorSet,
 scene_data: GpuSceneData = .{},
 texture_atlas: AllocatedImage,
+nearest_sampler: vk.Sampler,
 
 deletion_queue: vk_utils.DeletionQueue,
 
@@ -158,6 +159,7 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
 
     var descriptor_layout_builder = try descriptor.LayoutBuilder.init(allocator, 10);
     try descriptor_layout_builder.addBinding(0, .uniform_buffer_dynamic);
+    try descriptor_layout_builder.addBinding(1, .combined_image_sampler);
     const descriptor_layout = try descriptor_layout_builder.build(device.handle, .{ .vertex_bit = true, .fragment_bit = true });
     try deletion_queue.append(descriptor_layout);
 
@@ -199,6 +201,10 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     const texture_atlas = try texture.loadFromFile(&device, staging_buffer, immediate_context, "assets/atlas.png");
     try deletion_queue.appendImage(texture_atlas);
 
+    const nearest_sampler_info = vk_init.samplerCreateInfo(.nearest);
+    const nearest_sampler = try vkd().createSampler(device.handle, &nearest_sampler_info, null);
+    try deletion_queue.append(nearest_sampler);
+
     const vertices = try allocator.alloc(mesh.Vertex, 36);
     const cube = mesh.generateCube(.{ .front = true, .back = true, .west = true, .east = true, .north = true, .south = true }, vertices);
     const vertex_buffer = try vk_utils.createBuffer(
@@ -226,7 +232,8 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     try deletion_queue.appendBuffer(scene_data_buffer);
 
     const ratios = [_]descriptor.Allocator.PoolSizeRatio{
-        .{ .type = .uniform_buffer_dynamic, .ratio = 1 },
+        .{ .type = .uniform_buffer_dynamic, .ratio = 0.5 },
+        .{ .type = .combined_image_sampler, .ratio = 0.5 },
     };
     var descriptor_allocator = try descriptor.Allocator.init(allocator, device.handle, 10, &ratios);
     try deletion_queue.append(descriptor_allocator.pool);
@@ -235,6 +242,7 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
 
     var writer = descriptor.Writer.init(allocator);
     try writer.writeBuffer(0, scene_data_buffer.handle, @sizeOf(GpuSceneData), 0, .uniform_buffer_dynamic);
+    try writer.writeImage(1, texture_atlas.view, .shader_read_only_optimal, nearest_sampler, .combined_image_sampler);
     writer.updateSet(device.handle, descriptor_set);
 
     return .{
@@ -259,6 +267,7 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
         .scene_data_buffer = scene_data_buffer,
         .descriptor_set = descriptor_set,
         .texture_atlas = texture_atlas,
+        .nearest_sampler = nearest_sampler,
     };
 }
 
@@ -359,8 +368,8 @@ fn draw(self: *@This()) !void {
     vkd().cmdBindDescriptorSets(cmd, .graphics, self.default_pipeline_layout, 0, 1, @ptrCast(&self.descriptor_set), 1, @ptrCast(&uniform_offset));
 
     var model = math.mat.identity(math.Mat4);
-    model = math.mat.rotate(&model, std.math.degreesToRadians(f32, 45), .{ 1, 0, 0 });
-    model = math.mat.rotate(&model, std.math.degreesToRadians(f32, 45), .{ 0, 1, 0 });
+    model = math.mat.rotate(&model, std.math.degreesToRadians(f32, -45), .{ 1, 0, 0 });
+    model = math.mat.rotate(&model, std.math.degreesToRadians(f32, -45), .{ 0, 1, 0 });
     const push_constants: GpuPushConstants = .{
         .model = model,
     };

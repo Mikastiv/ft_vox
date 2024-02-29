@@ -1,10 +1,15 @@
 #version 450
 
 layout (location = 0) in vec3 color;
+layout (location = 1) in vec2 uv;
 
 layout (location = 0) out vec4 frag_color;
 
+layout (set = 0, binding = 1) uniform sampler2D texture_atlas;
+
 void main() {
+    vec4 pixel = texture(texture_atlas, uv);
+
     const float gamma = 2.2;
-    frag_color = vec4(pow(color, vec3(1.0 / gamma)), 1.0);
+    frag_color = pow(pixel, vec4(1.0 / gamma));
 }

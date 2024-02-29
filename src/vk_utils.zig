@@ -22,6 +22,7 @@ const HandleType = enum {
     buffer,
     descriptor_set_layout,
     descriptor_pool,
+    sampler,
 };
 
 const DeletionEntry = struct {
@@ -53,6 +54,7 @@ pub const DeletionQueue = struct {
             vk.Buffer => .buffer,
             vk.DescriptorSetLayout => .descriptor_set_layout,
             vk.DescriptorPool => .descriptor_pool,
+            vk.Sampler => .sampler,
             else => @compileError("unsupported type: " ++ @typeName(T)),
         };
         const handle_raw: usize = @intFromEnum(handle);
@@ -90,6 +92,7 @@ pub const DeletionQueue = struct {
                 .buffer => vkd().destroyBuffer(device, @enumFromInt(entry.handle), null),
                 .descriptor_set_layout => vkd().destroyDescriptorSetLayout(device, @enumFromInt(entry.handle), null),
                 .descriptor_pool => vkd().destroyDescriptorPool(device, @enumFromInt(entry.handle), null),
+                .sampler => vkd().destroySampler(device, @enumFromInt(entry.handle), null),
             }
         }
         self.entries.clearRetainingCapacity();

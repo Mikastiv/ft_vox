@@ -82,7 +82,7 @@ const ImageCopy = struct {
                 .dst_queue_family_index = ctx.queue_family_index,
             };
 
-            vkd().cmdPipelineBarrier(cmd, .{ .draw_indirect_bit = true }, .{ .transfer_bit = true }, .{}, 0, null, 0, null, 1, @ptrCast(&image_barrier));
+            vkd().cmdPipelineBarrier(cmd, .{ .top_of_pipe_bit = true }, .{ .transfer_bit = true }, .{}, 0, null, 0, null, 1, @ptrCast(&image_barrier));
         }
 
         const copy = vk.BufferImageCopy{

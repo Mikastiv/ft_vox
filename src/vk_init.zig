@@ -60,3 +60,23 @@ pub fn renderPassBeginInfo(
         .p_clear_values = clear_values.ptr,
     };
 }
+
+pub fn samplerCreateInfo(filter: vk.Filter) vk.SamplerCreateInfo {
+    return .{
+        .mag_filter = filter,
+        .min_filter = filter,
+        .mipmap_mode = .nearest,
+        .address_mode_u = .repeat,
+        .address_mode_v = .repeat,
+        .address_mode_w = .repeat,
+        .mip_lod_bias = 0,
+        .anisotropy_enable = vk.FALSE,
+        .max_anisotropy = 0,
+        .compare_enable = vk.FALSE,
+        .compare_op = .never,
+        .min_lod = 0,
+        .max_lod = 0,
+        .border_color = .float_transparent_black,
+        .unnormalized_coordinates = vk.FALSE,
+    };
+}
