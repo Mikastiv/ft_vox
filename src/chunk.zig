@@ -2,6 +2,8 @@ const std = @import("std");
 const mesh = @import("mesh.zig");
 const Block = @import("Block.zig");
 
+const assert = std.debug.assert;
+
 pub const width = 16;
 pub const height = 256;
 pub const depth = 16;
@@ -27,6 +29,10 @@ pub fn generateMesh(
 }
 
 pub fn getBlockSides(self: *const @This(), x: usize, y: usize, z: usize) mesh.CubeSides {
+    assert(x < width);
+    assert(y < height);
+    assert(z < depth);
+
     var sides: mesh.CubeSides = .{};
 
     if (z < depth - 1) {

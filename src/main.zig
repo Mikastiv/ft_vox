@@ -28,6 +28,8 @@ pub fn main() !void {
     defer engine.deinit();
 
     try engine.run();
+
+    std.log.info("memory usage: {:.2}", .{std.fmt.fmtIntSizeBin(fba.end_index)});
 }
 
 fn glfwErrorCallback(error_code: i32, description: [*c]const u8) callconv(.C) void {
