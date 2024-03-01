@@ -16,12 +16,12 @@ pub fn generateMesh(
     out_vertices: *std.ArrayList(mesh.Vertex),
     out_indices: *std.ArrayList(u16),
 ) !void {
-    for (0..16) |z| {
-        for (0..2) |y| {
-            for (0..16) |x| {
-                const sides = self.getBlockSides(x, y, z);
-                const block_id = self.blocks[xyzTo1d(z, y, z)];
+    for (0..depth) |z| {
+        for (0..height) |y| {
+            for (0..width) |x| {
+                const block_id = self.blocks[xyzTo1d(x, y, z)];
                 if (block_id == .air) continue;
+                const sides = self.getBlockSides(x, y, z);
                 try mesh.generateCube(sides, block_id, out_vertices, out_indices, .{ @floatFromInt(x), @floatFromInt(y), @floatFromInt(z) });
             }
         }

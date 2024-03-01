@@ -4,6 +4,7 @@ const math = @import("math.zig");
 pos: math.Vec3,
 right: math.Vec3,
 dir: math.Vec3,
+up: math.Vec3 = .{ 0, 1, 0 },
 pitch: f32,
 yaw: f32,
 
@@ -36,11 +37,10 @@ pub fn update(self: *@This(), offset: math.Vec2) void {
         @sin(yaw) * @cos(pitch),
     };
 
-    const up: math.Vec3 = .{ 0, 1, 0 };
     self.dir = math.vec.normalize(dir);
-    self.right = math.vec.normalize(math.vec.cross(self.dir, up));
+    self.right = math.vec.normalize(math.vec.cross(self.dir, self.up));
 }
 
 pub fn viewMatrix(self: *const @This()) math.Mat4 {
-    return math.mat.lookAtDir(self.pos, self.dir, .{ 0, 1, 0 });
+    return math.mat.lookAtDir(self.pos, self.dir, self.up);
 }

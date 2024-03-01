@@ -22,6 +22,9 @@ const vkd = vkk.dispatch.vkd;
 
 const staging_buffer_size = 1024 * 1024 * 100;
 
+const mouse_sensivity = 15.0;
+const move_speed = 10.0;
+
 const GpuSceneData = extern struct {
     view: math.Mat4 = math.mat.identity(math.Mat4),
     proj: math.Mat4 = math.mat.identity(math.Mat4),
@@ -230,6 +233,14 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
             }
         }
     }
+    chunk.setBlock(0, 1, 0, .tnt);
+    chunk.setBlock(0, 0, 0, .gold_ore);
+    chunk.setBlock(0, 1, 1, .coal_ore);
+    chunk.setBlock(8, 2, 8, .log);
+    chunk.setBlock(8, 3, 8, .log);
+    chunk.setBlock(8, 4, 8, .log);
+    chunk.setBlock(8, 5, 8, .log);
+
     try chunk.generateMesh(&vertices, &indices);
 
     const vertex_buffer = try vk_utils.createBuffer(
@@ -327,14 +338,38 @@ pub fn deinit(self: *@This()) void {
 }
 
 pub fn run(self: *@This()) !void {
+    var timer = try std.time.Timer.start();
     while (!self.window.shouldClose()) {
         c.glfwPollEvents();
+
+        const delta_ns = timer.lap();
+        const delta_s: f32 = @as(f32, @floatFromInt(delta_ns)) / std.time.ns_per_s;
+
+        try self.update(delta_s);
 
         self.renderImGuiFrame();
         try self.draw();
     }
 
     try vkd().deviceWaitIdle(self.device.handle);
+}
+
+fn update(self: *@This(), delta_time: f32) !void {
+    const pitch_delta = math.vec.mul(self.window.mouse.delta, delta_time * mouse_sensivity);
+    self.window.mouse.delta = .{ 0, 0 };
+    self.camera.update(pitch_delta);
+
+    const speed = move_speed * delta_time;
+    const forward = math.vec.mul(self.camera.dir, speed);
+    const right = math.vec.mul(self.camera.right, speed);
+    const up = math.vec.mul(self.camera.up, speed);
+
+    if (self.window.keyboard.keys[c.GLFW_KEY_W].down) self.camera.pos = math.vec.add(self.camera.pos, forward);
+    if (self.window.keyboard.keys[c.GLFW_KEY_S].down) self.camera.pos = math.vec.sub(self.camera.pos, forward);
+    if (self.window.keyboard.keys[c.GLFW_KEY_D].down) self.camera.pos = math.vec.add(self.camera.pos, right);
+    if (self.window.keyboard.keys[c.GLFW_KEY_A].down) self.camera.pos = math.vec.sub(self.camera.pos, right);
+    if (self.window.keyboard.keys[c.GLFW_KEY_SPACE].down) self.camera.pos = math.vec.add(self.camera.pos, up);
+    if (self.window.keyboard.keys[c.GLFW_KEY_LEFT_SHIFT].down) self.camera.pos = math.vec.sub(self.camera.pos, up);
 }
 
 fn draw(self: *@This()) !void {
