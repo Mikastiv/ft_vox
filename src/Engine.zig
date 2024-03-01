@@ -13,6 +13,7 @@ const descriptor = @import("descriptor.zig");
 const texture = @import("texture.zig");
 const Block = @import("Block.zig");
 const Chunk = @import("Chunk.zig");
+const Camera = @import("Camera.zig");
 
 const assert = std.debug.assert;
 
@@ -88,6 +89,7 @@ scene_data_buffer: AllocatedBuffer,
 vertices: std.ArrayList(mesh.Vertex),
 indices: std.ArrayList(u16),
 rotation: math.Vec3 = .{ 0, 0, 0 },
+camera: Camera,
 
 descriptor_set: vk.DescriptorSet,
 scene_data: GpuSceneData = .{},
@@ -279,6 +281,7 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
 
     var self: @This() = .{
         .window = window,
+        .camera = Camera.init(.{ 0, 4, 0 }),
         .surface = surface,
         .instance = instance,
         .physical_device = physical_device,
@@ -357,7 +360,7 @@ fn draw(self: *@This()) !void {
 
     try vkd().resetCommandPool(device, frame.command_pool, .{});
 
-    self.scene_data.view = math.mat.lookAt(.{ 0, 0, 4 }, .{ 0, 0, 0 }, .{ 0, 1, 0 });
+    self.scene_data.view = self.camera.viewMatrix();
     self.scene_data.proj = math.mat.perspective(std.math.degreesToRadians(f32, 70), self.window.aspectRatio(), 10000, 0.1);
     self.scene_data.view_proj = math.mat.mul(&self.scene_data.proj, &self.scene_data.view);
 
