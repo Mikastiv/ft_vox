@@ -60,7 +60,8 @@ pub fn generateCube(
     block_id: Block.Id,
     out_vertices: *std.ArrayList(Vertex),
     out_indices: *std.ArrayList(u16),
-) !Cube {
+    pos: math.Vec3,
+) !void {
     const count: u64 = @popCount(sides.toInt());
     assert(count < 7);
     assert(out_vertices.unusedCapacitySlice().len >= count * 4); // 4 vertices per side
@@ -68,18 +69,16 @@ pub fn generateCube(
 
     const block = Block.fromId(block_id);
 
-    const start_vertex = out_vertices.items.len;
-    const start_index = out_indices.items.len;
     if (sides.contains(CubeSides.front_side)) {
         const col = block.front[0];
         const row = block.front[1];
 
         try appendIndices(@intCast(out_vertices.items.len), out_indices);
         try out_vertices.appendSlice(&.{
-            .{ .pos = .{ 0, 1, 1 }, .uv = uvTopLeft(col, row) },
-            .{ .pos = .{ 0, 0, 1 }, .uv = uvBottomLeft(col, row) },
-            .{ .pos = .{ 1, 0, 1 }, .uv = uvBottomRight(col, row) },
-            .{ .pos = .{ 1, 1, 1 }, .uv = uvTopRight(col, row) },
+            .{ .pos = .{ pos[0] + 0, pos[1] + 1, pos[2] + 1 }, .uv = uvTopLeft(col, row) },
+            .{ .pos = .{ pos[0] + 0, pos[1] + 0, pos[2] + 1 }, .uv = uvBottomLeft(col, row) },
+            .{ .pos = .{ pos[0] + 1, pos[1] + 0, pos[2] + 1 }, .uv = uvBottomRight(col, row) },
+            .{ .pos = .{ pos[0] + 1, pos[1] + 1, pos[2] + 1 }, .uv = uvTopRight(col, row) },
         });
     }
     if (sides.contains(CubeSides.back_side)) {
@@ -88,10 +87,10 @@ pub fn generateCube(
         const row = block.back[1];
 
         try out_vertices.appendSlice(&.{
-            .{ .pos = .{ 1, 1, 0 }, .uv = uvTopLeft(col, row) },
-            .{ .pos = .{ 1, 0, 0 }, .uv = uvBottomLeft(col, row) },
-            .{ .pos = .{ 0, 0, 0 }, .uv = uvBottomRight(col, row) },
-            .{ .pos = .{ 0, 1, 0 }, .uv = uvTopRight(col, row) },
+            .{ .pos = .{ pos[0] + 1, pos[1] + 1, pos[2] + 0 }, .uv = uvTopLeft(col, row) },
+            .{ .pos = .{ pos[0] + 1, pos[1] + 0, pos[2] + 0 }, .uv = uvBottomLeft(col, row) },
+            .{ .pos = .{ pos[0] + 0, pos[1] + 0, pos[2] + 0 }, .uv = uvBottomRight(col, row) },
+            .{ .pos = .{ pos[0] + 0, pos[1] + 1, pos[2] + 0 }, .uv = uvTopRight(col, row) },
         });
     }
     if (sides.contains(CubeSides.west_side)) {
@@ -100,10 +99,10 @@ pub fn generateCube(
 
         try appendIndices(@intCast(out_vertices.items.len), out_indices);
         try out_vertices.appendSlice(&.{
-            .{ .pos = .{ 0, 1, 0 }, .uv = uvTopLeft(col, row) },
-            .{ .pos = .{ 0, 0, 0 }, .uv = uvBottomLeft(col, row) },
-            .{ .pos = .{ 0, 0, 1 }, .uv = uvBottomRight(col, row) },
-            .{ .pos = .{ 0, 1, 1 }, .uv = uvTopRight(col, row) },
+            .{ .pos = .{ pos[0] + 0, pos[1] + 1, pos[2] + 0 }, .uv = uvTopLeft(col, row) },
+            .{ .pos = .{ pos[0] + 0, pos[1] + 0, pos[2] + 0 }, .uv = uvBottomLeft(col, row) },
+            .{ .pos = .{ pos[0] + 0, pos[1] + 0, pos[2] + 1 }, .uv = uvBottomRight(col, row) },
+            .{ .pos = .{ pos[0] + 0, pos[1] + 1, pos[2] + 1 }, .uv = uvTopRight(col, row) },
         });
     }
     if (sides.contains(CubeSides.east_side)) {
@@ -112,10 +111,10 @@ pub fn generateCube(
 
         try appendIndices(@intCast(out_vertices.items.len), out_indices);
         try out_vertices.appendSlice(&.{
-            .{ .pos = .{ 1, 1, 1 }, .uv = uvTopLeft(col, row) },
-            .{ .pos = .{ 1, 0, 1 }, .uv = uvBottomLeft(col, row) },
-            .{ .pos = .{ 1, 0, 0 }, .uv = uvBottomRight(col, row) },
-            .{ .pos = .{ 1, 1, 0 }, .uv = uvTopRight(col, row) },
+            .{ .pos = .{ pos[0] + 1, pos[1] + 1, pos[2] + 1 }, .uv = uvTopLeft(col, row) },
+            .{ .pos = .{ pos[0] + 1, pos[1] + 0, pos[2] + 1 }, .uv = uvBottomLeft(col, row) },
+            .{ .pos = .{ pos[0] + 1, pos[1] + 0, pos[2] + 0 }, .uv = uvBottomRight(col, row) },
+            .{ .pos = .{ pos[0] + 1, pos[1] + 1, pos[2] + 0 }, .uv = uvTopRight(col, row) },
         });
     }
     if (sides.contains(CubeSides.south_side)) {
@@ -124,10 +123,10 @@ pub fn generateCube(
 
         try appendIndices(@intCast(out_vertices.items.len), out_indices);
         try out_vertices.appendSlice(&.{
-            .{ .pos = .{ 0, 0, 1 }, .uv = uvTopLeft(col, row) },
-            .{ .pos = .{ 0, 0, 0 }, .uv = uvBottomLeft(col, row) },
-            .{ .pos = .{ 1, 0, 0 }, .uv = uvBottomRight(col, row) },
-            .{ .pos = .{ 1, 0, 1 }, .uv = uvTopRight(col, row) },
+            .{ .pos = .{ pos[0] + 0, pos[1] + 0, pos[2] + 1 }, .uv = uvTopLeft(col, row) },
+            .{ .pos = .{ pos[0] + 0, pos[1] + 0, pos[2] + 0 }, .uv = uvBottomLeft(col, row) },
+            .{ .pos = .{ pos[0] + 1, pos[1] + 0, pos[2] + 0 }, .uv = uvBottomRight(col, row) },
+            .{ .pos = .{ pos[0] + 1, pos[1] + 0, pos[2] + 1 }, .uv = uvTopRight(col, row) },
         });
     }
     if (sides.contains(CubeSides.north_side)) {
@@ -136,17 +135,12 @@ pub fn generateCube(
 
         try appendIndices(@intCast(out_vertices.items.len), out_indices);
         try out_vertices.appendSlice(&.{
-            .{ .pos = .{ 0, 1, 0 }, .uv = uvTopLeft(col, row) },
-            .{ .pos = .{ 0, 1, 1 }, .uv = uvBottomLeft(col, row) },
-            .{ .pos = .{ 1, 1, 1 }, .uv = uvBottomRight(col, row) },
-            .{ .pos = .{ 1, 1, 0 }, .uv = uvTopRight(col, row) },
+            .{ .pos = .{ pos[0] + 0, pos[1] + 1, pos[2] + 0 }, .uv = uvTopLeft(col, row) },
+            .{ .pos = .{ pos[0] + 0, pos[1] + 1, pos[2] + 1 }, .uv = uvBottomLeft(col, row) },
+            .{ .pos = .{ pos[0] + 1, pos[1] + 1, pos[2] + 1 }, .uv = uvBottomRight(col, row) },
+            .{ .pos = .{ pos[0] + 1, pos[1] + 1, pos[2] + 0 }, .uv = uvTopRight(col, row) },
         });
     }
-
-    return .{
-        .vertices = out_vertices.items[start_vertex..out_vertices.items.len],
-        .indices = out_indices.items[start_index..out_indices.items.len],
-    };
 }
 
 fn appendIndices(initial_vertex: u16, out_indices: *std.ArrayList(u16)) !void {

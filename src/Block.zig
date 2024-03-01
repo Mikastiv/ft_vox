@@ -1,4 +1,9 @@
-pub const Id = enum {
+const std = @import("std");
+
+const assert = std.debug.assert;
+
+pub const Id = enum(u8) {
+    air,
     stone,
     cobblestone,
     dirt,
@@ -22,6 +27,7 @@ west: [2]u16,
 
 pub fn fromId(id: Id) @This() {
     return switch (id) {
+        .air => @panic("no texture for air"),
         .stone => .{
             .front = .{ 6, 0 },
             .back = .{ 6, 0 },

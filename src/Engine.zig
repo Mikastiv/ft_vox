@@ -12,6 +12,7 @@ const math = @import("math.zig");
 const descriptor = @import("descriptor.zig");
 const texture = @import("texture.zig");
 const Block = @import("Block.zig");
+const Chunk = @import("Chunk.zig");
 
 const assert = std.debug.assert;
 
@@ -113,6 +114,9 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     const physical_device = try vkk.PhysicalDevice.select(&instance, .{
         .surface = surface,
         .preferred_type = .discrete_gpu,
+        .required_features = .{
+            .fill_mode_non_solid = vk.TRUE,
+        },
     });
 
     const device = try vkk.Device.create(&physical_device, null, null);
@@ -211,14 +215,20 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     const nearest_sampler = try vkd().createSampler(device.handle, &nearest_sampler_info, null);
     try deletion_queue.append(nearest_sampler);
 
-    var vertices = try std.ArrayList(mesh.Vertex).initCapacity(allocator, 512);
-    var indices = try std.ArrayList(u16).initCapacity(allocator, 512);
-    const cube = try mesh.generateCube(
-        .{ .front = true, .back = true, .west = true, .east = true, .north = true, .south = true },
-        .gold_ore,
-        &vertices,
-        &indices,
-    );
+    var vertices = try std.ArrayList(mesh.Vertex).initCapacity(allocator, Chunk.block_count * 24);
+    var indices = try std.ArrayList(u16).initCapacity(allocator, Chunk.block_count * 36);
+
+    const chunk = try allocator.create(Chunk);
+    chunk.blocks = std.mem.zeroes(@TypeOf(chunk.blocks));
+
+    for (0..16) |z| {
+        for (0..2) |y| {
+            for (0..16) |x| {
+                chunk.setBlock(x, y, z, .grass);
+            }
+        }
+    }
+    try chunk.generateMesh(&vertices, &indices);
 
     const vertex_buffer = try vk_utils.createBuffer(
         device.handle,
@@ -238,7 +248,7 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     );
     try deletion_queue.appendBuffer(index_buffer);
 
-    try uploadMesh(device.handle, device.graphics_queue, immediate_context, staging_buffer, vertex_buffer, index_buffer, cube.vertices, cube.indices);
+    try uploadMesh(device.handle, device.graphics_queue, immediate_context, staging_buffer, vertex_buffer, index_buffer, vertices.items, indices.items);
 
     const min_alignment = physical_device.properties.limits.min_uniform_buffer_offset_alignment;
     assert(min_alignment > 0);
@@ -400,6 +410,7 @@ fn draw(self: *@This()) !void {
     vkd().cmdBindDescriptorSets(cmd, .graphics, self.default_pipeline_layout, 0, 1, @ptrCast(&self.descriptor_set), 1, @ptrCast(&uniform_offset));
 
     var model = math.mat.identity(math.Mat4);
+    model = math.mat.translate(&model, .{ 0, -2, 0 });
     model = math.mat.rotate(&model, std.math.degreesToRadians(f32, self.rotation[0]), .{ 1, 0, 0 });
     model = math.mat.rotate(&model, std.math.degreesToRadians(f32, self.rotation[1]), .{ 0, 1, 0 });
     model = math.mat.rotate(&model, std.math.degreesToRadians(f32, self.rotation[2]), .{ 0, 0, 1 });
