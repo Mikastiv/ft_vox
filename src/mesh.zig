@@ -1,6 +1,7 @@
 const std = @import("std");
 const vk = @import("vulkan-zig");
 const math = @import("math.zig");
+const Block = @import("Block.zig");
 
 const assert = std.debug.assert;
 
@@ -49,8 +50,14 @@ pub const Cube = struct {
     indices: []u16,
 };
 
+const tile_width = 16.0;
+const tile_height = 16.0;
+const tex_width = 512.0;
+const tex_height = 512.0;
+
 pub fn generateCube(
     sides: CubeSides,
+    block_id: Block.Id,
     out_vertices: *std.ArrayList(Vertex),
     out_indices: *std.ArrayList(u16),
 ) !Cube {
@@ -59,72 +66,80 @@ pub fn generateCube(
     assert(out_vertices.unusedCapacitySlice().len >= count * 4); // 4 vertices per side
     assert(out_indices.unusedCapacitySlice().len >= count * 6); // 6 indices per side
 
-    const row = 0.0;
-    const col = 2.0;
-    const tile_width = 16.0;
-    const tile_height = 16.0;
-    const tex_width = 512.0;
-    const tex_height = 512.0;
-
-    const top_left_uv: math.Vec2 = .{ col * tile_width / tex_width, row * tile_height / tex_height };
-    const top_right_uv: math.Vec2 = .{ (col + 1.0) * tile_width / tex_width, row * tile_height / tex_height };
-    const bottom_left_uv: math.Vec2 = .{ col * tile_width / tex_width, (row + 1.0) * tile_height / tex_height };
-    const bottom_right_uv: math.Vec2 = .{ (col + 1.0) * tile_width / tex_width, (row + 1.0) * tile_height / tex_height };
+    const block = Block.fromId(block_id);
 
     const start_vertex = out_vertices.items.len;
     const start_index = out_indices.items.len;
     if (sides.contains(CubeSides.front_side)) {
+        const col = block.front[0];
+        const row = block.front[1];
+
         try appendIndices(@intCast(out_vertices.items.len), out_indices);
         try out_vertices.appendSlice(&.{
-            .{ .pos = .{ -0.5, 0.5, 0.5 }, .uv = top_left_uv },
-            .{ .pos = .{ -0.5, -0.5, 0.5 }, .uv = bottom_left_uv },
-            .{ .pos = .{ 0.5, -0.5, 0.5 }, .uv = bottom_right_uv },
-            .{ .pos = .{ 0.5, 0.5, 0.5 }, .uv = top_right_uv },
+            .{ .pos = .{ 0, 1, 1 }, .uv = uvTopLeft(col, row) },
+            .{ .pos = .{ 0, 0, 1 }, .uv = uvBottomLeft(col, row) },
+            .{ .pos = .{ 1, 0, 1 }, .uv = uvBottomRight(col, row) },
+            .{ .pos = .{ 1, 1, 1 }, .uv = uvTopRight(col, row) },
         });
     }
     if (sides.contains(CubeSides.back_side)) {
         try appendIndices(@intCast(out_vertices.items.len), out_indices);
+        const col = block.back[0];
+        const row = block.back[1];
+
         try out_vertices.appendSlice(&.{
-            .{ .pos = .{ 0.5, 0.5, -0.5 }, .uv = top_left_uv },
-            .{ .pos = .{ 0.5, -0.5, -0.5 }, .uv = bottom_left_uv },
-            .{ .pos = .{ -0.5, -0.5, -0.5 }, .uv = bottom_right_uv },
-            .{ .pos = .{ -0.5, 0.5, -0.5 }, .uv = top_right_uv },
+            .{ .pos = .{ 1, 1, 0 }, .uv = uvTopLeft(col, row) },
+            .{ .pos = .{ 1, 0, 0 }, .uv = uvBottomLeft(col, row) },
+            .{ .pos = .{ 0, 0, 0 }, .uv = uvBottomRight(col, row) },
+            .{ .pos = .{ 0, 1, 0 }, .uv = uvTopRight(col, row) },
         });
     }
     if (sides.contains(CubeSides.west_side)) {
+        const col = block.west[0];
+        const row = block.west[1];
+
         try appendIndices(@intCast(out_vertices.items.len), out_indices);
         try out_vertices.appendSlice(&.{
-            .{ .pos = .{ -0.5, 0.5, -0.5 }, .uv = top_left_uv },
-            .{ .pos = .{ -0.5, -0.5, -0.5 }, .uv = bottom_left_uv },
-            .{ .pos = .{ -0.5, -0.5, 0.5 }, .uv = bottom_right_uv },
-            .{ .pos = .{ -0.5, 0.5, 0.5 }, .uv = top_right_uv },
+            .{ .pos = .{ 0, 1, 0 }, .uv = uvTopLeft(col, row) },
+            .{ .pos = .{ 0, 0, 0 }, .uv = uvBottomLeft(col, row) },
+            .{ .pos = .{ 0, 0, 1 }, .uv = uvBottomRight(col, row) },
+            .{ .pos = .{ 0, 1, 1 }, .uv = uvTopRight(col, row) },
         });
     }
     if (sides.contains(CubeSides.east_side)) {
+        const col = block.east[0];
+        const row = block.east[1];
+
         try appendIndices(@intCast(out_vertices.items.len), out_indices);
         try out_vertices.appendSlice(&.{
-            .{ .pos = .{ 0.5, 0.5, 0.5 }, .uv = top_left_uv },
-            .{ .pos = .{ 0.5, -0.5, 0.5 }, .uv = bottom_left_uv },
-            .{ .pos = .{ 0.5, -0.5, -0.5 }, .uv = bottom_right_uv },
-            .{ .pos = .{ 0.5, 0.5, -0.5 }, .uv = top_right_uv },
+            .{ .pos = .{ 1, 1, 1 }, .uv = uvTopLeft(col, row) },
+            .{ .pos = .{ 1, 0, 1 }, .uv = uvBottomLeft(col, row) },
+            .{ .pos = .{ 1, 0, 0 }, .uv = uvBottomRight(col, row) },
+            .{ .pos = .{ 1, 1, 0 }, .uv = uvTopRight(col, row) },
         });
     }
     if (sides.contains(CubeSides.south_side)) {
+        const col = block.south[0];
+        const row = block.south[1];
+
         try appendIndices(@intCast(out_vertices.items.len), out_indices);
         try out_vertices.appendSlice(&.{
-            .{ .pos = .{ -0.5, -0.5, 0.5 }, .uv = top_left_uv },
-            .{ .pos = .{ -0.5, -0.5, -0.5 }, .uv = bottom_left_uv },
-            .{ .pos = .{ 0.5, -0.5, -0.5 }, .uv = bottom_right_uv },
-            .{ .pos = .{ 0.5, -0.5, 0.5 }, .uv = top_right_uv },
+            .{ .pos = .{ 0, 0, 1 }, .uv = uvTopLeft(col, row) },
+            .{ .pos = .{ 0, 0, 0 }, .uv = uvBottomLeft(col, row) },
+            .{ .pos = .{ 1, 0, 0 }, .uv = uvBottomRight(col, row) },
+            .{ .pos = .{ 1, 0, 1 }, .uv = uvTopRight(col, row) },
         });
     }
     if (sides.contains(CubeSides.north_side)) {
+        const col = block.north[0];
+        const row = block.north[1];
+
         try appendIndices(@intCast(out_vertices.items.len), out_indices);
         try out_vertices.appendSlice(&.{
-            .{ .pos = .{ -0.5, 0.5, -0.5 }, .uv = top_left_uv },
-            .{ .pos = .{ -0.5, 0.5, 0.5 }, .uv = bottom_left_uv },
-            .{ .pos = .{ 0.5, 0.5, 0.5 }, .uv = bottom_right_uv },
-            .{ .pos = .{ 0.5, 0.5, -0.5 }, .uv = top_right_uv },
+            .{ .pos = .{ 0, 1, 0 }, .uv = uvTopLeft(col, row) },
+            .{ .pos = .{ 0, 1, 1 }, .uv = uvBottomLeft(col, row) },
+            .{ .pos = .{ 1, 1, 1 }, .uv = uvBottomRight(col, row) },
+            .{ .pos = .{ 1, 1, 0 }, .uv = uvTopRight(col, row) },
         });
     }
 
@@ -143,4 +158,40 @@ fn appendIndices(initial_vertex: u16, out_indices: *std.ArrayList(u16)) !void {
         initial_vertex + 2,
         initial_vertex + 3,
     });
+}
+
+fn uvTopLeft(col: u16, row: u16) math.Vec2 {
+    const col_f: f32 = @floatFromInt(col);
+    const row_f: f32 = @floatFromInt(row);
+    return .{
+        (col_f + 0.0) * tile_width / tex_width,
+        (row_f + 0.0) * tile_height / tex_height,
+    };
+}
+
+fn uvTopRight(col: u16, row: u16) math.Vec2 {
+    const col_f: f32 = @floatFromInt(col);
+    const row_f: f32 = @floatFromInt(row);
+    return .{
+        (col_f + 1.0) * tile_width / tex_width,
+        (row_f + 0.0) * tile_height / tex_height,
+    };
+}
+
+fn uvBottomLeft(col: u16, row: u16) math.Vec2 {
+    const col_f: f32 = @floatFromInt(col);
+    const row_f: f32 = @floatFromInt(row);
+    return .{
+        col_f * tile_width / tex_width,
+        (row_f + 1.0) * tile_height / tex_height,
+    };
+}
+
+fn uvBottomRight(col: u16, row: u16) math.Vec2 {
+    const col_f: f32 = @floatFromInt(col);
+    const row_f: f32 = @floatFromInt(row);
+    return .{
+        (col_f + 1.0) * tile_width / tex_width,
+        (row_f + 1.0) * tile_height / tex_height,
+    };
 }

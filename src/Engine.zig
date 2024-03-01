@@ -11,6 +11,7 @@ const mesh = @import("mesh.zig");
 const math = @import("math.zig");
 const descriptor = @import("descriptor.zig");
 const texture = @import("texture.zig");
+const Block = @import("Block.zig");
 
 const assert = std.debug.assert;
 
@@ -214,6 +215,7 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     var indices = try std.ArrayList(u16).initCapacity(allocator, 512);
     const cube = try mesh.generateCube(
         .{ .front = true, .back = true, .west = true, .east = true, .north = true, .south = true },
+        .gold_ore,
         &vertices,
         &indices,
     );
