@@ -38,7 +38,8 @@ pub fn update(self: *@This(), offset: math.Vec2) void {
     };
 
     self.dir = math.vec.normalize(dir);
-    self.right = math.vec.normalize(math.vec.cross(self.dir, self.up));
+    self.right = math.vec.normalize(math.vec.cross(self.dir, .{ 0, 1, 0 }));
+    self.up = math.vec.cross(self.right, self.dir);
 }
 
 pub fn viewMatrix(self: *const @This()) math.Mat4 {

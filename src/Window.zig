@@ -142,8 +142,8 @@ fn cursorCallback(window: ?*c.GLFWwindow, xpos: f64, ypos: f64) callconv(.C) voi
     const pos: math.Vec2 = .{ @floatCast(xpos), @floatCast(ypos) };
     self.mouse.delta = math.vec.sub(pos, self.mouse.pos);
     self.mouse.delta[1] *= -1;
-    self.mouse.delta[0] = std.math.clamp(self.mouse.delta[0], -100, 100);
-    self.mouse.delta[1] = std.math.clamp(self.mouse.delta[1], -100, 100);
+    self.mouse.delta[0] = std.math.clamp(self.mouse.delta[0], -150, 150);
+    self.mouse.delta[1] = std.math.clamp(self.mouse.delta[1], -150, 150);
     self.mouse.pos = pos;
 }
 

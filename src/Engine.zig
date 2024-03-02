@@ -23,7 +23,10 @@ const vkd = vkk.dispatch.vkd;
 const staging_buffer_size = 1024 * 1024 * 100;
 
 const mouse_sensivity = 15.0;
-const move_speed = 10.0;
+const move_speed = 8.0;
+
+const ns_per_tick: comptime_int = @intFromFloat(std.time.ns_per_ms * 16.6);
+const delta_time_fixed = @as(comptime_float, ns_per_tick) / @as(comptime_float, std.time.ns_per_s);
 
 const GpuSceneData = extern struct {
     view: math.Mat4 = math.mat.identity(math.Mat4),
@@ -339,6 +342,7 @@ pub fn deinit(self: *@This()) void {
 
 pub fn run(self: *@This()) !void {
     var timer = try std.time.Timer.start();
+    var tick_remainder = timer.read();
     while (!self.window.shouldClose()) {
         c.glfwPollEvents();
         self.window.update();
@@ -346,7 +350,15 @@ pub fn run(self: *@This()) !void {
         const delta_ns = timer.lap();
         const delta_s: f32 = @as(f32, @floatFromInt(delta_ns)) / std.time.ns_per_s;
 
+        var tick_time = tick_remainder + delta_ns;
+        if (tick_time > @as(u64, @intFromFloat(ns_per_tick))) {
+            try self.fixedUpdate();
+            tick_time -= ns_per_tick;
+        }
+        tick_remainder = tick_time;
+
         try self.update(delta_s);
+        self.window.mouse.delta = .{ 0, 0 };
 
         self.renderImGuiFrame();
         try self.draw();
@@ -355,12 +367,8 @@ pub fn run(self: *@This()) !void {
     try vkd().deviceWaitIdle(self.device.handle);
 }
 
-fn update(self: *@This(), delta_time: f32) !void {
-    const pitch_delta = math.vec.mul(self.window.mouse.delta, delta_time * mouse_sensivity);
-    self.window.mouse.delta = .{ 0, 0 };
-    self.camera.update(pitch_delta);
-
-    const speed = move_speed * delta_time;
+fn fixedUpdate(self: *@This()) !void {
+    const speed = move_speed * delta_time_fixed;
     const forward = math.vec.mul(self.camera.dir, speed);
     const right = math.vec.mul(self.camera.right, speed);
     const up = math.vec.mul(self.camera.up, speed);
@@ -371,6 +379,12 @@ fn update(self: *@This(), delta_time: f32) !void {
     if (self.window.keyboard.keys[c.GLFW_KEY_A].down) self.camera.pos = math.vec.sub(self.camera.pos, right);
     if (self.window.keyboard.keys[c.GLFW_KEY_SPACE].down) self.camera.pos = math.vec.add(self.camera.pos, up);
     if (self.window.keyboard.keys[c.GLFW_KEY_LEFT_SHIFT].down) self.camera.pos = math.vec.sub(self.camera.pos, up);
+}
+
+fn update(self: *@This(), delta_time: f32) !void {
+    const camera_delta = math.vec.mul(self.window.mouse.delta, delta_time * mouse_sensivity);
+    self.camera.update(camera_delta);
+
     if (self.window.keyboard.keys[c.GLFW_KEY_M].pressed) self.window.setMouseCapture(!self.window.mouse_captured);
 }
 
@@ -497,13 +511,13 @@ fn renderImGuiFrame(self: *@This()) void {
     c.cImGui_ImplGlfw_NewFrame();
     c.ImGui_NewFrame();
 
-    if (c.ImGui_Begin("model", null, c.ImGuiWindowFlags_None)) {
+    if (c.ImGui_Begin("model", null, c.ImGuiWindowFlags_AlwaysAutoResize)) {
         _ = c.ImGui_SliderFloat3("rotation", @ptrCast(&self.rotation), 0, 360);
 
         c.ImGui_End();
     }
 
-    if (c.ImGui_Begin("info", null, c.ImGuiWindowFlags_None)) {
+    if (c.ImGui_Begin("info", null, c.ImGuiWindowFlags_AlwaysAutoResize)) {
         c.ImGui_BeginDisabled(true);
         _ = c.ImGui_Checkbox("mouse captured", &self.window.mouse_captured);
         c.ImGui_EndDisabled();
