@@ -1,6 +1,7 @@
 const std = @import("std");
 const mesh = @import("mesh.zig");
 const Block = @import("Block.zig");
+const math = @import("math.zig");
 
 const assert = std.debug.assert;
 
@@ -10,6 +11,23 @@ pub const depth = 16;
 pub const block_count = width * height * depth;
 
 blocks: [width * height * depth]Block.Id,
+pos: math.Vec2,
+
+pub fn default(self: *@This()) void {
+    self.blocks = std.mem.zeroes(@TypeOf(self.blocks));
+
+    for (0..16) |z| {
+        for (0..2) |y| {
+            for (0..16) |x| {
+                self.setBlock(x, y, z, .grass);
+            }
+        }
+    }
+    self.setBlock(8, 2, 8, .tnt);
+    self.setBlock(8, 3, 8, .tnt);
+    self.setBlock(8, 4, 8, .tnt);
+    self.setBlock(8, 5, 8, .tnt);
+}
 
 pub fn generateMesh(
     self: *const @This(),

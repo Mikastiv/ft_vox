@@ -28,6 +28,9 @@ const move_speed = 8.0;
 const ns_per_tick: comptime_int = @intFromFloat(std.time.ns_per_ms * 16.6);
 const delta_time_fixed = @as(comptime_float, ns_per_tick) / @as(comptime_float, std.time.ns_per_s);
 
+const global_vertex_buffer_size = @sizeOf(mesh.Vertex) * mesh.max_vertices_per_block * Chunk.block_count * 32;
+const global_index_buffer_size = @sizeOf(u16) * mesh.max_indices_per_block * Chunk.block_count * 32;
+
 const GpuSceneData = extern struct {
     view: math.Mat4 = math.mat.identity(math.Mat4),
     proj: math.Mat4 = math.mat.identity(math.Mat4),
@@ -50,6 +53,12 @@ pub const AllocatedBuffer = struct {
     handle: vk.Buffer,
     memory: vk.DeviceMemory,
     size: vk.DeviceSize,
+};
+
+pub const AllocatedMemory = struct {
+    handle: vk.DeviceMemory,
+    size: vk.DeviceSize,
+    alignment: vk.DeviceSize,
 };
 
 pub const ImmediateContext = struct {
@@ -227,38 +236,65 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     var indices = try std.ArrayList(u16).initCapacity(allocator, Chunk.block_count * 36);
 
     const chunk = try allocator.create(Chunk);
-    chunk.blocks = std.mem.zeroes(@TypeOf(chunk.blocks));
-
-    for (0..16) |z| {
-        for (0..2) |y| {
-            for (0..16) |x| {
-                chunk.setBlock(x, y, z, .grass);
-            }
-        }
-    }
-    chunk.setBlock(0, 1, 0, .tnt);
-    chunk.setBlock(0, 0, 0, .gold_ore);
-    chunk.setBlock(0, 1, 1, .coal_ore);
-    chunk.setBlock(8, 2, 8, .log);
-    chunk.setBlock(8, 3, 8, .log);
-    chunk.setBlock(8, 4, 8, .log);
-    chunk.setBlock(8, 5, 8, .log);
+    chunk.default();
 
     try chunk.generateMesh(&vertices, &indices);
+
+    const vertex_buffer_info: vk.BufferCreateInfo = .{
+        .size = global_vertex_buffer_size,
+        .usage = .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
+        .sharing_mode = .exclusive,
+    };
+    const vertex_buffer_ref = try vkd().createBuffer(device.handle, &vertex_buffer_info, null);
+    defer vkd().destroyBuffer(device.handle, vertex_buffer_ref, null);
+
+    const vertex_buffer_memory = try vk_utils.allocateMemory(
+        device.handle,
+        physical_device.handle,
+        vertex_buffer_ref,
+        .{ .device_local_bit = true },
+    );
+    try deletion_queue.append(vertex_buffer_memory.handle);
+
+    std.log.info(
+        "vertex buffers: size: {.2}, alignment: {d}",
+        .{ std.fmt.fmtIntSizeBin(vertex_buffer_memory.size), vertex_buffer_memory.alignment },
+    );
 
     const vertex_buffer = try vk_utils.createBuffer(
         device.handle,
         physical_device.handle,
-        @sizeOf(mesh.Vertex) * vertices.items.len,
+        global_vertex_buffer_size,
         .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
         .{ .device_local_bit = true },
     );
     try deletion_queue.appendBuffer(vertex_buffer);
 
+    const index_buffer_info: vk.BufferCreateInfo = .{
+        .size = global_index_buffer_size,
+        .usage = .{ .transfer_dst_bit = true, .index_buffer_bit = true },
+        .sharing_mode = .exclusive,
+    };
+    const index_buffer_ref = try vkd().createBuffer(device.handle, &index_buffer_info, null);
+    defer vkd().destroyBuffer(device.handle, index_buffer_ref, null);
+
+    const index_buffer_memory = try vk_utils.allocateMemory(
+        device.handle,
+        physical_device.handle,
+        index_buffer_ref,
+        .{ .device_local_bit = true },
+    );
+    try deletion_queue.append(index_buffer_memory.handle);
+
+    std.log.info(
+        "index buffers: size: {.2}, alignment: {d}",
+        .{ std.fmt.fmtIntSizeBin(index_buffer_memory.size), index_buffer_memory.alignment },
+    );
+
     const index_buffer = try vk_utils.createBuffer(
         device.handle,
         physical_device.handle,
-        @sizeOf(u16) * indices.items.len,
+        global_index_buffer_size,
         .{ .transfer_dst_bit = true, .index_buffer_bit = true },
         .{ .device_local_bit = true },
     );

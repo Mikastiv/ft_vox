@@ -254,6 +254,34 @@ pub fn scale(comptime T: type, value: T, factor: f32) T {
     return @intFromFloat(scaled);
 }
 
+pub fn allocateMemory(
+    device: vk.Device,
+    physical_device: vk.PhysicalDevice,
+    buffer: vk.Buffer,
+    property_flags: vk.MemoryPropertyFlags,
+) !Engine.AllocatedMemory {
+    const requirements = vkd().getBufferMemoryRequirements(device, buffer);
+    const memory_properties = vki().getPhysicalDeviceMemoryProperties(physical_device);
+
+    const memory_type = findMemoryType(
+        memory_properties,
+        requirements.memory_type_bits,
+        property_flags,
+    ) orelse return error.NoSuitableMemoryType;
+
+    const alloc_info: vk.MemoryAllocateInfo = .{
+        .allocation_size = requirements.size,
+        .memory_type_index = memory_type,
+    };
+    const memory = try vkd().allocateMemory(device, &alloc_info, null);
+
+    return .{
+        .handle = memory,
+        .size = requirements.size,
+        .alignment = requirements.alignment,
+    };
+}
+
 pub fn createBuffer(
     device: vk.Device,
     physical_device: vk.PhysicalDevice,

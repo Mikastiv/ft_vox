@@ -50,6 +50,9 @@ pub const Cube = struct {
     indices: []u16,
 };
 
+pub const max_vertices_per_block = 24;
+pub const max_indices_per_block = 36;
+
 const tile_width = 16.0;
 const tile_height = 16.0;
 const tex_width = 512.0;
