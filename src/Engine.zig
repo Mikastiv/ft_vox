@@ -14,6 +14,7 @@ const texture = @import("texture.zig");
 const Block = @import("Block.zig");
 const Chunk = @import("Chunk.zig");
 const Camera = @import("Camera.zig");
+const World = @import("World.zig");
 
 const assert = std.debug.assert;
 
@@ -101,6 +102,7 @@ vertex_buffer: AllocatedBuffer,
 index_buffer: AllocatedBuffer,
 scene_data_buffer: AllocatedBuffer,
 
+world: World,
 vertices: std.ArrayList(mesh.Vertex),
 indices: std.ArrayList(u16),
 rotation: math.Vec3 = .{ 0, 0, 0 },
@@ -236,10 +238,10 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     var vertices = try std.ArrayList(mesh.Vertex).initCapacity(allocator, Chunk.block_count * 24);
     var indices = try std.ArrayList(u16).initCapacity(allocator, Chunk.block_count * 36);
 
-    const chunk = try allocator.create(Chunk);
-    chunk.default();
+    const world = try World.init(allocator);
 
-    try chunk.generateMesh(&vertices, &indices);
+    world.chunks[0].default();
+    try world.chunks[0].generateMesh(&vertices, &indices);
 
     const vertex_buffer_info: vk.BufferCreateInfo = .{
         .size = global_vertex_buffer_size,
@@ -351,6 +353,7 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
         .vertices = vertices,
         .indices = indices,
         .staging_buffer = staging_buffer,
+        .world = world,
         .vertex_buffer = vertex_buffer,
         .index_buffer = index_buffer,
         .scene_data_buffer = scene_data_buffer,
