@@ -7,6 +7,8 @@ const assert = std.debug.assert;
 
 pub const Button = struct {
     down: bool,
+    last: bool,
+    pressed: bool,
 };
 
 pub const Keyboard = struct {
@@ -28,6 +30,7 @@ keyboard: Keyboard = .{},
 mouse: Mouse = .{},
 framebuffer_resized: bool = false,
 minimized: bool = false,
+mouse_captured: bool = false,
 
 pub fn init(allocator: std.mem.Allocator, width: u32, height: u32, title: [*:0]const u8) !*@This() {
     assert(width >= 256);
@@ -66,6 +69,13 @@ pub fn deinit(self: *@This()) void {
     c.glfwDestroyWindow(self.handle);
 }
 
+pub fn update(self: *@This()) void {
+    for (&self.keyboard.keys) |*key| {
+        key.pressed = key.down and !key.last;
+        key.last = key.down;
+    }
+}
+
 pub fn shouldClose(self: *const @This()) bool {
     return c.glfwWindowShouldClose(self.handle) == c.GLFW_TRUE;
 }
@@ -91,6 +101,14 @@ pub fn createSurface(self: *const @This(), instance: vk.Instance) !vk.SurfaceKHR
     if (result != .success) return error.VulkanSurfaceCreationFailed;
 
     return surface;
+}
+
+pub fn setMouseCapture(self: *@This(), captured: bool) void {
+    self.mouse_captured = captured;
+    if (captured)
+        c.glfwSetInputMode(self.handle, c.GLFW_CURSOR, c.GLFW_CURSOR_DISABLED)
+    else
+        c.glfwSetInputMode(self.handle, c.GLFW_CURSOR, c.GLFW_CURSOR_NORMAL);
 }
 
 fn keyCallback(window: ?*c.GLFWwindow, key: c_int, _: c_int, action: c_int, _: c_int) callconv(.C) void {
@@ -119,6 +137,7 @@ fn mouseCallback(window: ?*c.GLFWwindow, button: c_int, action: c_int, _: c_int)
 
 fn cursorCallback(window: ?*c.GLFWwindow, xpos: f64, ypos: f64) callconv(.C) void {
     const self = getUserPointer(window);
+    if (!self.mouse_captured) return;
 
     const pos: math.Vec2 = .{ @floatCast(xpos), @floatCast(ypos) };
     self.mouse.delta = math.vec.sub(pos, self.mouse.pos);

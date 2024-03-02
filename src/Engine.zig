@@ -341,6 +341,7 @@ pub fn run(self: *@This()) !void {
     var timer = try std.time.Timer.start();
     while (!self.window.shouldClose()) {
         c.glfwPollEvents();
+        self.window.update();
 
         const delta_ns = timer.lap();
         const delta_s: f32 = @as(f32, @floatFromInt(delta_ns)) / std.time.ns_per_s;
@@ -370,6 +371,7 @@ fn update(self: *@This(), delta_time: f32) !void {
     if (self.window.keyboard.keys[c.GLFW_KEY_A].down) self.camera.pos = math.vec.sub(self.camera.pos, right);
     if (self.window.keyboard.keys[c.GLFW_KEY_SPACE].down) self.camera.pos = math.vec.add(self.camera.pos, up);
     if (self.window.keyboard.keys[c.GLFW_KEY_LEFT_SHIFT].down) self.camera.pos = math.vec.sub(self.camera.pos, up);
+    if (self.window.keyboard.keys[c.GLFW_KEY_M].pressed) self.window.setMouseCapture(!self.window.mouse_captured);
 }
 
 fn draw(self: *@This()) !void {
@@ -497,6 +499,14 @@ fn renderImGuiFrame(self: *@This()) void {
 
     if (c.ImGui_Begin("model", null, c.ImGuiWindowFlags_None)) {
         _ = c.ImGui_SliderFloat3("rotation", @ptrCast(&self.rotation), 0, 360);
+
+        c.ImGui_End();
+    }
+
+    if (c.ImGui_Begin("info", null, c.ImGuiWindowFlags_None)) {
+        c.ImGui_BeginDisabled(true);
+        _ = c.ImGui_Checkbox("mouse captured", &self.window.mouse_captured);
+        c.ImGui_EndDisabled();
 
         c.ImGui_End();
     }
