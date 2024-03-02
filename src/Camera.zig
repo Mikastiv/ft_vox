@@ -8,11 +8,14 @@ up: math.Vec3 = .{ 0, 1, 0 },
 pitch: f32,
 yaw: f32,
 
+smooth_dir: math.Vec3,
+
 pub fn init(pos: math.Vec3) @This() {
     var self: @This() = .{
         .pos = pos,
         .right = .{ 0, 0, 0 },
         .dir = .{ 0, 0, 0 },
+        .smooth_dir = .{ 0, 0, 0 },
         .pitch = 0,
         .yaw = 0,
     };
@@ -38,10 +41,11 @@ pub fn update(self: *@This(), offset: math.Vec2) void {
     };
 
     self.dir = math.vec.normalize(dir);
-    self.right = math.vec.normalize(math.vec.cross(self.dir, .{ 0, 1, 0 }));
-    self.up = math.vec.cross(self.right, self.dir);
+    self.smooth_dir = math.vec.add(math.vec.mul(self.dir, 0.2), math.vec.mul(self.smooth_dir, 0.8));
+    self.right = math.vec.normalize(math.vec.cross(self.smooth_dir, .{ 0, 1, 0 }));
+    self.up = math.vec.cross(self.right, self.smooth_dir);
 }
 
 pub fn viewMatrix(self: *const @This()) math.Mat4 {
-    return math.mat.lookAtDir(self.pos, self.dir, self.up);
+    return math.mat.lookAtDir(self.pos, self.smooth_dir, self.up);
 }
