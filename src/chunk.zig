@@ -9,6 +9,8 @@ pub const width = 16;
 pub const height = 256;
 pub const depth = 16;
 pub const block_count = width * height * depth;
+pub const vertex_buffer_size = @sizeOf(mesh.Vertex) * mesh.max_vertices_per_block * block_count;
+pub const index_buffer_size = @sizeOf(u16) * mesh.max_indices_per_block * block_count;
 
 blocks: [width * height * depth]Block.Id,
 pos: math.Vec2,
@@ -40,7 +42,17 @@ pub fn generateMesh(
                 const block_id = self.blocks[xyzTo1d(x, y, z)];
                 if (block_id == .air) continue;
                 const sides = self.getBlockSides(x, y, z);
-                try mesh.generateCube(sides, block_id, out_vertices, out_indices, .{ @floatFromInt(x), @floatFromInt(y), @floatFromInt(z) });
+                try mesh.generateCube(
+                    sides,
+                    block_id,
+                    out_vertices,
+                    out_indices,
+                    .{
+                        @floatFromInt(x),
+                        @floatFromInt(y),
+                        @floatFromInt(z),
+                    },
+                );
             }
         }
     }

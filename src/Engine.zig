@@ -28,8 +28,8 @@ const move_speed = 8.0;
 const ns_per_tick: comptime_int = @intFromFloat(std.time.ns_per_ms * 16.6);
 const delta_time_fixed = @as(comptime_float, ns_per_tick) / @as(comptime_float, std.time.ns_per_s);
 
-const global_vertex_buffer_size = @sizeOf(mesh.Vertex) * mesh.max_vertices_per_block * Chunk.block_count * 32;
-const global_index_buffer_size = @sizeOf(u16) * mesh.max_indices_per_block * Chunk.block_count * 32;
+const global_vertex_buffer_size = Chunk.vertex_buffer_size * 32;
+const global_index_buffer_size = Chunk.index_buffer_size * 32;
 
 const GpuSceneData = extern struct {
     view: math.Mat4 = math.mat.identity(math.Mat4),
