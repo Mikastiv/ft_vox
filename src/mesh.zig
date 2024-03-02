@@ -55,8 +55,8 @@ pub const max_indices_per_block = 36;
 
 const tile_width = 16.0;
 const tile_height = 16.0;
-const tex_width = 512.0;
-const tex_height = 512.0;
+const tex_width = 256.0;
+const tex_height = 256.0;
 
 pub fn generateCube(
     sides: CubeSides,

@@ -16,6 +16,8 @@ pub const Id = enum(u8) {
     coal_ore,
     iron_ore,
     gold_ore,
+    diamond_ore,
+    emerald_ore,
 };
 
 front: [2]u16,
@@ -117,12 +119,28 @@ pub fn fromId(id: Id) @This() {
             .west = .{ 15, 0 },
         },
         .gold_ore => .{
-            .front = .{ 16, 0 },
-            .back = .{ 16, 0 },
-            .north = .{ 16, 0 },
-            .south = .{ 16, 0 },
-            .east = .{ 16, 0 },
-            .west = .{ 16, 0 },
+            .front = .{ 2, 1 },
+            .back = .{ 2, 1 },
+            .north = .{ 2, 1 },
+            .south = .{ 2, 1 },
+            .east = .{ 2, 1 },
+            .west = .{ 2, 1 },
+        },
+        .diamond_ore => .{
+            .front = .{ 1, 1 },
+            .back = .{ 1, 1 },
+            .north = .{ 1, 1 },
+            .south = .{ 1, 1 },
+            .east = .{ 1, 1 },
+            .west = .{ 1, 1 },
+        },
+        .emerald_ore => .{
+            .front = .{ 0, 1 },
+            .back = .{ 0, 1 },
+            .north = .{ 0, 1 },
+            .south = .{ 0, 1 },
+            .east = .{ 0, 1 },
+            .west = .{ 0, 1 },
         },
     };
 }

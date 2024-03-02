@@ -14,7 +14,7 @@ pub fn init(pos: math.Vec3) @This() {
         .right = .{ 0, 0, 0 },
         .dir = .{ 0, 0, 0 },
         .pitch = 0,
-        .yaw = -89,
+        .yaw = 0,
     };
 
     self.update(.{ 0, 0 });

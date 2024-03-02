@@ -23,10 +23,10 @@ pub fn default(self: *@This()) void {
             }
         }
     }
-    self.setBlock(8, 2, 8, .tnt);
-    self.setBlock(8, 3, 8, .tnt);
-    self.setBlock(8, 4, 8, .tnt);
-    self.setBlock(8, 5, 8, .tnt);
+    self.setBlock(8, 2, 8, .diamond_ore);
+    self.setBlock(8, 3, 8, .diamond_ore);
+    self.setBlock(8, 4, 8, .diamond_ore);
+    self.setBlock(8, 5, 8, .diamond_ore);
 }
 
 pub fn generateMesh(

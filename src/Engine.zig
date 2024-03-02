@@ -114,6 +114,7 @@ nearest_sampler: vk.Sampler,
 deletion_queue: vk_utils.DeletionQueue,
 
 frame_number: u64 = 0,
+fps: f32 = 0,
 
 pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     const instance = try vkk.Instance.create(c.glfwGetInstanceProcAddress, .{
@@ -379,12 +380,25 @@ pub fn deinit(self: *@This()) void {
 pub fn run(self: *@This()) !void {
     var timer = try std.time.Timer.start();
     var tick_remainder = timer.read();
+
+    var fps_history = std.mem.zeroes([60]f32);
+    var current_history: usize = 0;
+
     while (!self.window.shouldClose()) {
         c.glfwPollEvents();
         self.window.update();
 
         const delta_ns = timer.lap();
         const delta_s: f32 = @as(f32, @floatFromInt(delta_ns)) / std.time.ns_per_s;
+
+        fps_history[current_history] = 1.0 / delta_s;
+        current_history = (current_history + 1) % fps_history.len;
+
+        var fps_sum: f32 = 0;
+        for (fps_history) |fps| {
+            fps_sum += fps;
+        }
+        self.fps = fps_sum / @as(f32, @floatFromInt(fps_history.len));
 
         var tick_time = tick_remainder + delta_ns;
         if (tick_time > @as(u64, @intFromFloat(ns_per_tick))) {
@@ -554,6 +568,7 @@ fn renderImGuiFrame(self: *@This()) void {
     }
 
     if (c.ImGui_Begin("info", null, c.ImGuiWindowFlags_AlwaysAutoResize)) {
+        c.ImGui_Text("Fps: %.2f", self.fps);
         c.ImGui_BeginDisabled(true);
         _ = c.ImGui_Checkbox("mouse captured", &self.window.mouse_captured);
         c.ImGui_EndDisabled();
