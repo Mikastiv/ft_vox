@@ -80,7 +80,7 @@ pub fn init(
 }
 
 pub fn addChunk(self: *@This(), chunk: *const Chunk) !void {
-    assert(self.chunk_mapping.get(chunk.pos) == null);
+    if (self.chunk_mapping.get(chunk.pos) != null) return;
     const idx = self.freeSlot() orelse return error.NoFreeChunkSlot;
 
     self.chunks[idx] = chunk.*;
@@ -89,7 +89,7 @@ pub fn addChunk(self: *@This(), chunk: *const Chunk) !void {
 }
 
 pub fn removeChunk(self: *@This(), pos: Chunk.Pos) void {
-    const idx = self.chunk_mapping.get(pos) orelse @panic("no chunk");
+    const idx = self.chunk_mapping.get(pos) orelse return;
     _ = self.chunk_mapping.remove(pos);
     self.states[idx] = .empty;
 }

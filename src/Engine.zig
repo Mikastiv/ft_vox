@@ -101,6 +101,7 @@ staging_buffer: AllocatedBuffer,
 scene_data_buffer: AllocatedBuffer,
 
 world: World,
+chunk_temp: *Chunk,
 camera: Camera,
 
 descriptor_set: vk.DescriptorSet,
@@ -336,6 +337,7 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
         .default_pipeline = default_pipeline,
         .frames = frames,
         .staging_buffer = staging_buffer,
+        .chunk_temp = chunk,
         .world = world,
         .scene_data_buffer = scene_data_buffer,
         .descriptor_set = descriptor_set,
@@ -407,12 +409,35 @@ fn fixedUpdate(self: *@This()) !void {
     const right = math.vec.mul(self.camera.right, speed);
     const up = math.vec.mul(self.camera.up, speed);
 
+    const prev_chunk: Chunk.Pos = .{ @intFromFloat(self.camera.pos[0] / Chunk.width), @intFromFloat(self.camera.pos[2] / Chunk.depth) };
     if (self.window.keyboard.keys[c.GLFW_KEY_W].down) self.camera.pos = math.vec.add(self.camera.pos, forward);
     if (self.window.keyboard.keys[c.GLFW_KEY_S].down) self.camera.pos = math.vec.sub(self.camera.pos, forward);
     if (self.window.keyboard.keys[c.GLFW_KEY_D].down) self.camera.pos = math.vec.add(self.camera.pos, right);
     if (self.window.keyboard.keys[c.GLFW_KEY_A].down) self.camera.pos = math.vec.sub(self.camera.pos, right);
     if (self.window.keyboard.keys[c.GLFW_KEY_SPACE].down) self.camera.pos = math.vec.add(self.camera.pos, up);
     if (self.window.keyboard.keys[c.GLFW_KEY_LEFT_SHIFT].down) self.camera.pos = math.vec.sub(self.camera.pos, up);
+    const current_chunk: Chunk.Pos = .{ @intFromFloat(self.camera.pos[0] / Chunk.width), @intFromFloat(self.camera.pos[2] / Chunk.depth) };
+
+    if (current_chunk[0] != prev_chunk[0] or current_chunk[1] != prev_chunk[1]) {
+        const min = .{ current_chunk[0] - 4, current_chunk[1] - 4 };
+        const max = .{ current_chunk[0] + 4, current_chunk[1] + 4 };
+
+        for (self.world.chunks) |*chunk| {
+            if (chunk.pos[0] < min[0] or chunk.pos[0] > max[0] or chunk.pos[1] < min[1] or chunk.pos[1] > max[1]) {
+                self.world.removeChunk(chunk.pos);
+            }
+        }
+
+        self.chunk_temp.default(.{ 0, 0 });
+        for (0..8) |j| {
+            for (0..8) |i| {
+                const x: i32 = @intCast(i);
+                const z: i32 = @intCast(j);
+                self.chunk_temp.pos = .{ current_chunk[0] + x - 4, current_chunk[1] + z - 4 };
+                try self.world.addChunk(self.chunk_temp);
+            }
+        }
+    }
 }
 
 fn update(self: *@This(), delta_time: f32) !void {
@@ -462,6 +487,12 @@ fn draw(self: *@This()) !void {
 
     const command_begin_info: vk.CommandBufferBeginInfo = .{ .flags = .{ .one_time_submit_bit = true } };
     try vkd().beginCommandBuffer(cmd, &command_begin_info);
+
+    for (0..self.world.chunks.len) |idx| {
+        if (self.world.states[idx] != .in_queue) continue;
+
+        try self.world.uploadChunk(self.device.handle, self.world.chunks[idx].pos, cmd, self.staging_buffer);
+    }
 
     const clear_value = vk.ClearValue{ .color = .{ .float_32 = .{ 0.1, 0.1, 0.1, 1 } } };
     const depth_clear = vk.ClearValue{ .depth_stencil = .{ .depth = 0, .stencil = 0 } };
