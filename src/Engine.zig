@@ -238,11 +238,6 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     var vertices = try std.ArrayList(mesh.Vertex).initCapacity(allocator, Chunk.block_count * 24);
     var indices = try std.ArrayList(u16).initCapacity(allocator, Chunk.block_count * 36);
 
-    const world = try World.init(allocator);
-
-    world.chunks[0].default();
-    try world.chunks[0].generateMesh(&vertices, &indices);
-
     const vertex_buffer_info: vk.BufferCreateInfo = .{
         .size = global_vertex_buffer_size,
         .usage = .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
@@ -258,20 +253,6 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
         .{ .device_local_bit = true },
     );
     try deletion_queue.append(vertex_buffer_memory.handle);
-
-    std.log.info(
-        "vertex buffers: size: {.2}, alignment: {d}",
-        .{ std.fmt.fmtIntSizeBin(vertex_buffer_memory.size), vertex_buffer_memory.alignment },
-    );
-
-    const vertex_buffer = try vk_utils.createBuffer(
-        device.handle,
-        physical_device.handle,
-        global_vertex_buffer_size,
-        .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
-        .{ .device_local_bit = true },
-    );
-    try deletion_queue.appendBuffer(vertex_buffer);
 
     const index_buffer_info: vk.BufferCreateInfo = .{
         .size = global_index_buffer_size,
@@ -293,6 +274,25 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
         "index buffers: size: {.2}, alignment: {d}",
         .{ std.fmt.fmtIntSizeBin(index_buffer_memory.size), index_buffer_memory.alignment },
     );
+
+    std.log.info(
+        "vertex buffers: size: {.2}, alignment: {d}",
+        .{ std.fmt.fmtIntSizeBin(vertex_buffer_memory.size), vertex_buffer_memory.alignment },
+    );
+
+    const world = try World.init(allocator, device.handle, vertex_buffer_memory, index_buffer_memory, &deletion_queue);
+
+    world.chunks[0].default();
+    try world.chunks[0].generateMesh(&vertices, &indices);
+
+    const vertex_buffer = try vk_utils.createBuffer(
+        device.handle,
+        physical_device.handle,
+        global_vertex_buffer_size,
+        .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
+        .{ .device_local_bit = true },
+    );
+    try deletion_queue.appendBuffer(vertex_buffer);
 
     const index_buffer = try vk_utils.createBuffer(
         device.handle,

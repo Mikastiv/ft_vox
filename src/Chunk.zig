@@ -12,8 +12,13 @@ pub const block_count = width * height * depth;
 pub const vertex_buffer_size = @sizeOf(mesh.Vertex) * mesh.max_vertices_per_block * block_count;
 pub const index_buffer_size = @sizeOf(u16) * mesh.max_indices_per_block * block_count;
 
+pub const Pos = struct {
+    x: usize,
+    y: usize,
+};
+
 blocks: [width * height * depth]Block.Id,
-pos: math.Vec2,
+pos: Pos,
 
 pub fn default(self: *@This()) void {
     self.blocks = std.mem.zeroes(@TypeOf(self.blocks));
