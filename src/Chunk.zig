@@ -14,16 +14,14 @@ pub const max_indices = mesh.max_indices_per_block * block_count;
 pub const vertex_buffer_size = @sizeOf(mesh.Vertex) * max_vertices;
 pub const index_buffer_size = @sizeOf(u16) * max_indices;
 
-pub const Pos = struct {
-    x: usize,
-    y: usize,
-};
+pub const Pos = [2]u32;
 
 blocks: [width * height * depth]Block.Id,
 pos: Pos,
 
-pub fn default(self: *@This()) void {
+pub fn default(self: *@This(), pos: Pos) void {
     self.blocks = std.mem.zeroes(@TypeOf(self.blocks));
+    self.pos = pos;
 
     for (0..16) |z| {
         for (0..2) |y| {

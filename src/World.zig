@@ -27,7 +27,7 @@ vertex_buffer_offsets: []vk.DeviceSize,
 index_buffer_offsets: []vk.DeviceSize,
 
 vertex_upload_buffer: std.ArrayList(mesh.Vertex),
-index_upload_buffer: std.ArrayList(u32),
+index_upload_buffer: std.ArrayList(u16),
 
 pub fn init(
     allocator: std.mem.Allocator,
@@ -49,7 +49,7 @@ pub fn init(
         .vertex_buffer_offsets = try allocator.alloc(vk.DeviceSize, max_loaded_chunk),
         .index_buffer_offsets = try allocator.alloc(vk.DeviceSize, max_loaded_chunk),
         .vertex_upload_buffer = try std.ArrayList(mesh.Vertex).initCapacity(allocator, Chunk.max_vertices),
-        .index_upload_buffer = try std.ArrayList(u32).initCapacity(allocator, Chunk.max_indices),
+        .index_upload_buffer = try std.ArrayList(u16).initCapacity(allocator, Chunk.max_indices),
     };
 
     @memset(self.states, .empty);
@@ -84,7 +84,7 @@ pub fn addChunk(self: *@This(), chunk: *const Chunk) !void {
     const idx = self.freeSlot() orelse return error.NoFreeChunkSlot;
 
     self.chunks[idx] = chunk.*;
-    self.state[idx] = .in_queue;
+    self.states[idx] = .in_queue;
     try self.chunk_mapping.put(chunk.pos, idx);
 }
 
@@ -125,7 +125,7 @@ pub fn uploadChunk(self: *@This(), device: vk.Device, pos: Chunk.Pos, cmd: vk.Co
     vkd().cmdCopyBuffer(cmd, staging_buffer.handle, self.index_buffers[idx], 1, @ptrCast(&index_copy));
 
     self.states[idx] = .in_use;
-    self.index_counts[idx] = indices.len;
+    self.index_counts[idx] = @intCast(indices.len);
 }
 
 fn freeSlot(self: *const @This()) ?usize {

@@ -98,14 +98,9 @@ default_pipeline_layout: vk.PipelineLayout,
 default_pipeline: vk.Pipeline,
 
 staging_buffer: AllocatedBuffer,
-vertex_buffer: AllocatedBuffer,
-index_buffer: AllocatedBuffer,
 scene_data_buffer: AllocatedBuffer,
 
 world: World,
-vertices: std.ArrayList(mesh.Vertex),
-indices: std.ArrayList(u16),
-rotation: math.Vec3 = .{ 0, 0, 0 },
 camera: Camera,
 
 descriptor_set: vk.DescriptorSet,
@@ -235,9 +230,6 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     const nearest_sampler = try vkd().createSampler(device.handle, &nearest_sampler_info, null);
     try deletion_queue.append(nearest_sampler);
 
-    var vertices = try std.ArrayList(mesh.Vertex).initCapacity(allocator, Chunk.block_count * 24);
-    var indices = try std.ArrayList(u16).initCapacity(allocator, Chunk.block_count * 36);
-
     const vertex_buffer_info: vk.BufferCreateInfo = .{
         .size = global_vertex_buffer_size,
         .usage = .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
@@ -280,30 +272,21 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
         .{ std.fmt.fmtIntSizeBin(vertex_buffer_memory.size), vertex_buffer_memory.alignment },
     );
 
-    const world = try World.init(allocator, device.handle, vertex_buffer_memory, index_buffer_memory, &deletion_queue);
+    var world = try World.init(allocator, device.handle, vertex_buffer_memory, index_buffer_memory, &deletion_queue);
 
-    world.chunks[0].default();
-    try world.chunks[0].generateMesh(&vertices, &indices);
+    const chunk = try allocator.create(Chunk);
+    chunk.default(.{ 0, 0 });
 
-    const vertex_buffer = try vk_utils.createBuffer(
-        device.handle,
-        physical_device.handle,
-        global_vertex_buffer_size,
-        .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
-        .{ .device_local_bit = true },
-    );
-    try deletion_queue.appendBuffer(vertex_buffer);
+    const cmd = try beginImmediateSubmit(immediate_context);
+    for (0..8) |j| {
+        for (0..4) |i| {
+            chunk.pos = .{ @intCast(i), @intCast(j) };
+            try world.addChunk(chunk);
+            try world.uploadChunk(device.handle, chunk.pos, cmd, staging_buffer);
+        }
+    }
 
-    const index_buffer = try vk_utils.createBuffer(
-        device.handle,
-        physical_device.handle,
-        global_index_buffer_size,
-        .{ .transfer_dst_bit = true, .index_buffer_bit = true },
-        .{ .device_local_bit = true },
-    );
-    try deletion_queue.appendBuffer(index_buffer);
-
-    try uploadMesh(device.handle, device.graphics_queue, immediate_context, staging_buffer, vertex_buffer, index_buffer, vertices.items, indices.items);
+    try endImmediateSubmit(device.handle, device.graphics_queue, immediate_context, cmd);
 
     const min_alignment = physical_device.properties.limits.min_uniform_buffer_offset_alignment;
     assert(min_alignment > 0);
@@ -350,12 +333,8 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
         .default_pipeline_layout = default_pipeline_layout,
         .default_pipeline = default_pipeline,
         .frames = frames,
-        .vertices = vertices,
-        .indices = indices,
         .staging_buffer = staging_buffer,
         .world = world,
-        .vertex_buffer = vertex_buffer,
-        .index_buffer = index_buffer,
         .scene_data_buffer = scene_data_buffer,
         .descriptor_set = descriptor_set,
         .texture_atlas = texture_atlas,
@@ -512,21 +491,22 @@ fn draw(self: *@This()) !void {
     };
     vkd().cmdSetScissor(cmd, 0, 1, @ptrCast(&scissor));
 
-    vkd().cmdBindVertexBuffers(cmd, 0, 1, @ptrCast(&self.vertex_buffer.handle), &[_]vk.DeviceSize{0});
-    vkd().cmdBindIndexBuffer(cmd, self.index_buffer.handle, 0, .uint16);
-    vkd().cmdBindDescriptorSets(cmd, .graphics, self.default_pipeline_layout, 0, 1, @ptrCast(&self.descriptor_set), 1, @ptrCast(&uniform_offset));
+    for (0..self.world.chunks.len) |idx| {
+        if (self.world.states[idx] != .in_use) continue;
 
-    var model = math.mat.identity(math.Mat4);
-    model = math.mat.translate(&model, .{ 0, -2, 0 });
-    model = math.mat.rotate(&model, std.math.degreesToRadians(f32, self.rotation[0]), .{ 1, 0, 0 });
-    model = math.mat.rotate(&model, std.math.degreesToRadians(f32, self.rotation[1]), .{ 0, 1, 0 });
-    model = math.mat.rotate(&model, std.math.degreesToRadians(f32, self.rotation[2]), .{ 0, 0, 1 });
-    const push_constants: GpuPushConstants = .{
-        .model = model,
-    };
-    vkd().cmdPushConstants(cmd, self.default_pipeline_layout, .{ .vertex_bit = true }, 0, @sizeOf(GpuPushConstants), @ptrCast(&push_constants));
+        vkd().cmdBindVertexBuffers(cmd, 0, 1, @ptrCast(&self.world.vertex_buffers[idx]), &[_]vk.DeviceSize{0});
+        vkd().cmdBindIndexBuffer(cmd, self.world.index_buffers[idx], 0, .uint16);
+        vkd().cmdBindDescriptorSets(cmd, .graphics, self.default_pipeline_layout, 0, 1, @ptrCast(&self.descriptor_set), 1, @ptrCast(&uniform_offset));
 
-    vkd().cmdDrawIndexed(cmd, @intCast(self.indices.items.len), 1, 0, 0, 0);
+        var model = math.mat.identity(math.Mat4);
+        model = math.mat.translate(&model, .{ @floatFromInt(self.world.chunks[idx].pos[0] * 16), 0, @floatFromInt(self.world.chunks[idx].pos[1] * 16) });
+        const push_constants: GpuPushConstants = .{
+            .model = model,
+        };
+        vkd().cmdPushConstants(cmd, self.default_pipeline_layout, .{ .vertex_bit = true }, 0, @sizeOf(GpuPushConstants), @ptrCast(&push_constants));
+
+        vkd().cmdDrawIndexed(cmd, self.world.index_counts[idx], 1, 0, 0, 0);
+    }
 
     c.cImGui_ImplVulkan_RenderDrawData(c.ImGui_GetDrawData(), c.vkZigHandleToC(c.VkCommandBuffer, cmd));
 
@@ -563,12 +543,6 @@ fn renderImGuiFrame(self: *@This()) void {
     c.cImGui_ImplVulkan_NewFrame();
     c.cImGui_ImplGlfw_NewFrame();
     c.ImGui_NewFrame();
-
-    if (c.ImGui_Begin("model", null, c.ImGuiWindowFlags_AlwaysAutoResize)) {
-        _ = c.ImGui_SliderFloat3("rotation", @ptrCast(&self.rotation), 0, 360);
-
-        c.ImGui_End();
-    }
 
     if (c.ImGui_Begin("info", null, c.ImGuiWindowFlags_AlwaysAutoResize)) {
         c.ImGui_Text("Fps: %.2f", self.fps);
@@ -678,10 +652,10 @@ fn beginImmediateSubmit(ctx: ImmediateContext) !vk.CommandBuffer {
     return ctx.command_buffer;
 }
 
-fn endImmediateSubmit(device: vk.Device, queue: vk.Queue, ctx: ImmediateContext) !void {
-    try vkd().endCommandBuffer(ctx.command_buffer);
+fn endImmediateSubmit(device: vk.Device, queue: vk.Queue, ctx: ImmediateContext, cmd: vk.CommandBuffer) !void {
+    try vkd().endCommandBuffer(cmd);
 
-    const submit: vk.SubmitInfo = .{ .command_buffer_count = 1, .p_command_buffers = @ptrCast(&ctx.command_buffer) };
+    const submit: vk.SubmitInfo = .{ .command_buffer_count = 1, .p_command_buffers = @ptrCast(&cmd) };
     try vkd().queueSubmit(queue, 1, @ptrCast(&submit), ctx.fence);
 
     const res = try vkd().waitForFences(device, 1, @ptrCast(&ctx.fence), vk.TRUE, std.time.ns_per_s);
