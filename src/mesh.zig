@@ -37,6 +37,7 @@ pub const CubeSides = packed struct {
 
     pub usingnamespace vk.FlagsMixin(CubeSides);
 
+    pub const empty: @This() = .{};
     pub const north_side: @This() = .{ .north = true };
     pub const south_side: @This() = .{ .south = true };
     pub const east_side: @This() = .{ .east = true };
@@ -64,7 +65,7 @@ pub fn generateCube(
     out_vertices: *std.ArrayList(Vertex),
     out_indices: *std.ArrayList(u16),
     pos: math.Vec3,
-) !void {
+) void {
     const count: u64 = @popCount(sides.toInt());
     assert(count < 7);
     assert(out_vertices.unusedCapacitySlice().len >= count * 4); // 4 vertices per side
@@ -76,8 +77,8 @@ pub fn generateCube(
         const col = block.front[0];
         const row = block.front[1];
 
-        try appendIndices(@intCast(out_vertices.items.len), out_indices);
-        try out_vertices.appendSlice(&.{
+        appendIndices(@intCast(out_vertices.items.len), out_indices);
+        out_vertices.appendSliceAssumeCapacity(&.{
             .{ .pos = .{ pos[0] + 0, pos[1] + 1, pos[2] + 1 }, .uv = uvTopLeft(col, row) },
             .{ .pos = .{ pos[0] + 0, pos[1] + 0, pos[2] + 1 }, .uv = uvBottomLeft(col, row) },
             .{ .pos = .{ pos[0] + 1, pos[1] + 0, pos[2] + 1 }, .uv = uvBottomRight(col, row) },
@@ -85,11 +86,11 @@ pub fn generateCube(
         });
     }
     if (sides.contains(CubeSides.back_side)) {
-        try appendIndices(@intCast(out_vertices.items.len), out_indices);
         const col = block.back[0];
         const row = block.back[1];
 
-        try out_vertices.appendSlice(&.{
+        appendIndices(@intCast(out_vertices.items.len), out_indices);
+        out_vertices.appendSliceAssumeCapacity(&.{
             .{ .pos = .{ pos[0] + 1, pos[1] + 1, pos[2] + 0 }, .uv = uvTopLeft(col, row) },
             .{ .pos = .{ pos[0] + 1, pos[1] + 0, pos[2] + 0 }, .uv = uvBottomLeft(col, row) },
             .{ .pos = .{ pos[0] + 0, pos[1] + 0, pos[2] + 0 }, .uv = uvBottomRight(col, row) },
@@ -100,8 +101,8 @@ pub fn generateCube(
         const col = block.west[0];
         const row = block.west[1];
 
-        try appendIndices(@intCast(out_vertices.items.len), out_indices);
-        try out_vertices.appendSlice(&.{
+        appendIndices(@intCast(out_vertices.items.len), out_indices);
+        out_vertices.appendSliceAssumeCapacity(&.{
             .{ .pos = .{ pos[0] + 0, pos[1] + 1, pos[2] + 0 }, .uv = uvTopLeft(col, row) },
             .{ .pos = .{ pos[0] + 0, pos[1] + 0, pos[2] + 0 }, .uv = uvBottomLeft(col, row) },
             .{ .pos = .{ pos[0] + 0, pos[1] + 0, pos[2] + 1 }, .uv = uvBottomRight(col, row) },
@@ -112,8 +113,8 @@ pub fn generateCube(
         const col = block.east[0];
         const row = block.east[1];
 
-        try appendIndices(@intCast(out_vertices.items.len), out_indices);
-        try out_vertices.appendSlice(&.{
+        appendIndices(@intCast(out_vertices.items.len), out_indices);
+        out_vertices.appendSliceAssumeCapacity(&.{
             .{ .pos = .{ pos[0] + 1, pos[1] + 1, pos[2] + 1 }, .uv = uvTopLeft(col, row) },
             .{ .pos = .{ pos[0] + 1, pos[1] + 0, pos[2] + 1 }, .uv = uvBottomLeft(col, row) },
             .{ .pos = .{ pos[0] + 1, pos[1] + 0, pos[2] + 0 }, .uv = uvBottomRight(col, row) },
@@ -124,8 +125,8 @@ pub fn generateCube(
         const col = block.south[0];
         const row = block.south[1];
 
-        try appendIndices(@intCast(out_vertices.items.len), out_indices);
-        try out_vertices.appendSlice(&.{
+        appendIndices(@intCast(out_vertices.items.len), out_indices);
+        out_vertices.appendSliceAssumeCapacity(&.{
             .{ .pos = .{ pos[0] + 0, pos[1] + 0, pos[2] + 1 }, .uv = uvTopLeft(col, row) },
             .{ .pos = .{ pos[0] + 0, pos[1] + 0, pos[2] + 0 }, .uv = uvBottomLeft(col, row) },
             .{ .pos = .{ pos[0] + 1, pos[1] + 0, pos[2] + 0 }, .uv = uvBottomRight(col, row) },
@@ -136,8 +137,8 @@ pub fn generateCube(
         const col = block.north[0];
         const row = block.north[1];
 
-        try appendIndices(@intCast(out_vertices.items.len), out_indices);
-        try out_vertices.appendSlice(&.{
+        appendIndices(@intCast(out_vertices.items.len), out_indices);
+        out_vertices.appendSliceAssumeCapacity(&.{
             .{ .pos = .{ pos[0] + 0, pos[1] + 1, pos[2] + 0 }, .uv = uvTopLeft(col, row) },
             .{ .pos = .{ pos[0] + 0, pos[1] + 1, pos[2] + 1 }, .uv = uvBottomLeft(col, row) },
             .{ .pos = .{ pos[0] + 1, pos[1] + 1, pos[2] + 1 }, .uv = uvBottomRight(col, row) },
@@ -146,8 +147,8 @@ pub fn generateCube(
     }
 }
 
-fn appendIndices(initial_vertex: u16, out_indices: *std.ArrayList(u16)) !void {
-    try out_indices.appendSlice(&.{
+fn appendIndices(initial_vertex: u16, out_indices: *std.ArrayList(u16)) void {
+    out_indices.appendSliceAssumeCapacity(&.{
         initial_vertex + 0,
         initial_vertex + 1,
         initial_vertex + 2,

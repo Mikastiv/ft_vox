@@ -113,6 +113,7 @@ deletion_queue: vk_utils.DeletionQueue,
 
 frame_number: u64 = 0,
 fps: f32 = 0,
+timer: std.time.Timer,
 
 pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     const instance = try vkk.Instance.create(c.glfwGetInstanceProcAddress, .{
@@ -343,6 +344,7 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
         .descriptor_set = descriptor_set,
         .texture_atlas = texture_atlas,
         .nearest_sampler = nearest_sampler,
+        .timer = try std.time.Timer.start(),
     };
 
     try self.initImGui();
@@ -488,11 +490,15 @@ fn draw(self: *@This()) !void {
     const command_begin_info: vk.CommandBufferBeginInfo = .{ .flags = .{ .one_time_submit_bit = true } };
     try vkd().beginCommandBuffer(cmd, &command_begin_info);
 
+    var uploaded = false;
+    self.timer.reset();
     for (0..self.world.chunks.len) |idx| {
         if (self.world.states[idx] != .in_queue) continue;
 
+        uploaded = true;
         try self.world.uploadChunk(self.device.handle, self.world.chunks[idx].pos, cmd, self.staging_buffer);
     }
+    if (uploaded) std.log.info("chunk upload {}", .{std.fmt.fmtDuration(self.timer.lap())});
 
     const clear_value = vk.ClearValue{ .color = .{ .float_32 = .{ 0.1, 0.1, 0.1, 1 } } };
     const depth_clear = vk.ClearValue{ .depth_stencil = .{ .depth = 0, .stencil = 0 } };

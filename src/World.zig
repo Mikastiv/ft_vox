@@ -29,6 +29,8 @@ index_buffer_offsets: []vk.DeviceSize,
 vertex_upload_buffer: std.ArrayList(mesh.Vertex),
 index_upload_buffer: std.ArrayList(u16),
 
+timer: std.time.Timer,
+
 pub fn init(
     allocator: std.mem.Allocator,
     device: vk.Device,
@@ -50,6 +52,7 @@ pub fn init(
         .index_buffer_offsets = try allocator.alloc(vk.DeviceSize, max_loaded_chunk),
         .vertex_upload_buffer = try std.ArrayList(mesh.Vertex).initCapacity(allocator, Chunk.max_vertices),
         .index_upload_buffer = try std.ArrayList(u16).initCapacity(allocator, Chunk.max_indices),
+        .timer = try std.time.Timer.start(),
     };
 
     @memset(self.states, .empty);
@@ -98,9 +101,13 @@ pub fn uploadChunk(self: *@This(), device: vk.Device, pos: Chunk.Pos, cmd: vk.Co
     const idx = self.chunk_mapping.get(pos) orelse @panic("no chunk");
     assert(self.states[idx] == .in_queue);
 
+    self.timer.reset();
+
     self.vertex_upload_buffer.clearRetainingCapacity();
     self.index_upload_buffer.clearRetainingCapacity();
     try self.chunks[idx].generateMesh(&self.vertex_upload_buffer, &self.index_upload_buffer);
+
+    std.log.info("chunk mesh generate {}", .{std.fmt.fmtDuration(self.timer.lap())});
 
     const vertices = self.vertex_upload_buffer.items;
     const indices = self.index_upload_buffer.items;
@@ -117,6 +124,8 @@ pub fn uploadChunk(self: *@This(), device: vk.Device, pos: Chunk.Pos, cmd: vk.Co
         @memcpy(ptr[0..vertex_size], std.mem.sliceAsBytes(vertices));
         @memcpy(ptr[vertex_size .. vertex_size + index_size], std.mem.sliceAsBytes(indices));
     }
+
+    std.log.info("chunk mesh copy {}", .{std.fmt.fmtDuration(self.timer.lap())});
 
     const vertex_copy = vk.BufferCopy{ .size = vertex_size, .src_offset = 0, .dst_offset = 0 };
     vkd().cmdCopyBuffer(cmd, staging_buffer.handle, self.vertex_buffers[idx], 1, @ptrCast(&vertex_copy));

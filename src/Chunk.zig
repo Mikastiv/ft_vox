@@ -49,7 +49,8 @@ pub fn generateMesh(
                 const block_id = self.blocks[xyzTo1d(x, y, z)];
                 if (block_id == .air) continue;
                 const sides = self.getBlockSides(x, y, z);
-                try mesh.generateCube(
+                if (sides.toInt() == mesh.CubeSides.empty.toInt()) continue;
+                mesh.generateCube(
                     sides,
                     block_id,
                     out_vertices,
