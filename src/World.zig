@@ -91,7 +91,7 @@ pub fn addChunk(self: *@This(), chunk: *const Chunk) !void {
 pub fn removeChunk(self: *@This(), pos: Chunk.Pos) void {
     const idx = self.chunk_mapping.get(pos) orelse @panic("no chunk");
     _ = self.chunk_mapping.remove(pos);
-    self.state[idx] = .empty;
+    self.states[idx] = .empty;
 }
 
 pub fn uploadChunk(self: *@This(), device: vk.Device, pos: Chunk.Pos, cmd: vk.CommandBuffer, staging_buffer: Engine.AllocatedBuffer) !void {
