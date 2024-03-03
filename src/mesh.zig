@@ -79,10 +79,10 @@ pub fn generateCube(
 
         appendIndices(@intCast(out_vertices.items.len), out_indices);
         out_vertices.appendSliceAssumeCapacity(&.{
-            .{ .pos = .{ pos[0] + 0, pos[1] + 1, pos[2] + 1 }, .uv = uvTopLeft(col, row) },
-            .{ .pos = .{ pos[0] + 0, pos[1] + 0, pos[2] + 1 }, .uv = uvBottomLeft(col, row) },
-            .{ .pos = .{ pos[0] + 1, pos[1] + 0, pos[2] + 1 }, .uv = uvBottomRight(col, row) },
-            .{ .pos = .{ pos[0] + 1, pos[1] + 1, pos[2] + 1 }, .uv = uvTopRight(col, row) },
+            .{ .pos = math.vec.add(pos, .{ 0, 1, 1 }), .uv = uvTopLeft(col, row) },
+            .{ .pos = math.vec.add(pos, .{ 0, 0, 1 }), .uv = uvBottomLeft(col, row) },
+            .{ .pos = math.vec.add(pos, .{ 1, 0, 1 }), .uv = uvBottomRight(col, row) },
+            .{ .pos = math.vec.add(pos, .{ 1, 1, 1 }), .uv = uvTopRight(col, row) },
         });
     }
     if (sides.contains(CubeSides.back_side)) {
@@ -91,10 +91,10 @@ pub fn generateCube(
 
         appendIndices(@intCast(out_vertices.items.len), out_indices);
         out_vertices.appendSliceAssumeCapacity(&.{
-            .{ .pos = .{ pos[0] + 1, pos[1] + 1, pos[2] + 0 }, .uv = uvTopLeft(col, row) },
-            .{ .pos = .{ pos[0] + 1, pos[1] + 0, pos[2] + 0 }, .uv = uvBottomLeft(col, row) },
-            .{ .pos = .{ pos[0] + 0, pos[1] + 0, pos[2] + 0 }, .uv = uvBottomRight(col, row) },
-            .{ .pos = .{ pos[0] + 0, pos[1] + 1, pos[2] + 0 }, .uv = uvTopRight(col, row) },
+            .{ .pos = math.vec.add(pos, .{ 1, 1, 0 }), .uv = uvTopLeft(col, row) },
+            .{ .pos = math.vec.add(pos, .{ 1, 0, 0 }), .uv = uvBottomLeft(col, row) },
+            .{ .pos = math.vec.add(pos, .{ 0, 0, 0 }), .uv = uvBottomRight(col, row) },
+            .{ .pos = math.vec.add(pos, .{ 0, 1, 0 }), .uv = uvTopRight(col, row) },
         });
     }
     if (sides.contains(CubeSides.west_side)) {
@@ -103,10 +103,10 @@ pub fn generateCube(
 
         appendIndices(@intCast(out_vertices.items.len), out_indices);
         out_vertices.appendSliceAssumeCapacity(&.{
-            .{ .pos = .{ pos[0] + 0, pos[1] + 1, pos[2] + 0 }, .uv = uvTopLeft(col, row) },
-            .{ .pos = .{ pos[0] + 0, pos[1] + 0, pos[2] + 0 }, .uv = uvBottomLeft(col, row) },
-            .{ .pos = .{ pos[0] + 0, pos[1] + 0, pos[2] + 1 }, .uv = uvBottomRight(col, row) },
-            .{ .pos = .{ pos[0] + 0, pos[1] + 1, pos[2] + 1 }, .uv = uvTopRight(col, row) },
+            .{ .pos = math.vec.add(pos, .{ 0, 1, 0 }), .uv = uvTopLeft(col, row) },
+            .{ .pos = math.vec.add(pos, .{ 0, 0, 0 }), .uv = uvBottomLeft(col, row) },
+            .{ .pos = math.vec.add(pos, .{ 0, 0, 1 }), .uv = uvBottomRight(col, row) },
+            .{ .pos = math.vec.add(pos, .{ 0, 1, 1 }), .uv = uvTopRight(col, row) },
         });
     }
     if (sides.contains(CubeSides.east_side)) {
@@ -115,10 +115,10 @@ pub fn generateCube(
 
         appendIndices(@intCast(out_vertices.items.len), out_indices);
         out_vertices.appendSliceAssumeCapacity(&.{
-            .{ .pos = .{ pos[0] + 1, pos[1] + 1, pos[2] + 1 }, .uv = uvTopLeft(col, row) },
-            .{ .pos = .{ pos[0] + 1, pos[1] + 0, pos[2] + 1 }, .uv = uvBottomLeft(col, row) },
-            .{ .pos = .{ pos[0] + 1, pos[1] + 0, pos[2] + 0 }, .uv = uvBottomRight(col, row) },
-            .{ .pos = .{ pos[0] + 1, pos[1] + 1, pos[2] + 0 }, .uv = uvTopRight(col, row) },
+            .{ .pos = math.vec.add(pos, .{ 1, 1, 1 }), .uv = uvTopLeft(col, row) },
+            .{ .pos = math.vec.add(pos, .{ 1, 0, 1 }), .uv = uvBottomLeft(col, row) },
+            .{ .pos = math.vec.add(pos, .{ 1, 0, 0 }), .uv = uvBottomRight(col, row) },
+            .{ .pos = math.vec.add(pos, .{ 1, 1, 0 }), .uv = uvTopRight(col, row) },
         });
     }
     if (sides.contains(CubeSides.south_side)) {
@@ -127,10 +127,10 @@ pub fn generateCube(
 
         appendIndices(@intCast(out_vertices.items.len), out_indices);
         out_vertices.appendSliceAssumeCapacity(&.{
-            .{ .pos = .{ pos[0] + 0, pos[1] + 0, pos[2] + 1 }, .uv = uvTopLeft(col, row) },
-            .{ .pos = .{ pos[0] + 0, pos[1] + 0, pos[2] + 0 }, .uv = uvBottomLeft(col, row) },
-            .{ .pos = .{ pos[0] + 1, pos[1] + 0, pos[2] + 0 }, .uv = uvBottomRight(col, row) },
-            .{ .pos = .{ pos[0] + 1, pos[1] + 0, pos[2] + 1 }, .uv = uvTopRight(col, row) },
+            .{ .pos = math.vec.add(pos, .{ 0, 0, 1 }), .uv = uvTopLeft(col, row) },
+            .{ .pos = math.vec.add(pos, .{ 0, 0, 0 }), .uv = uvBottomLeft(col, row) },
+            .{ .pos = math.vec.add(pos, .{ 1, 0, 0 }), .uv = uvBottomRight(col, row) },
+            .{ .pos = math.vec.add(pos, .{ 1, 0, 1 }), .uv = uvTopRight(col, row) },
         });
     }
     if (sides.contains(CubeSides.north_side)) {
@@ -139,10 +139,10 @@ pub fn generateCube(
 
         appendIndices(@intCast(out_vertices.items.len), out_indices);
         out_vertices.appendSliceAssumeCapacity(&.{
-            .{ .pos = .{ pos[0] + 0, pos[1] + 1, pos[2] + 0 }, .uv = uvTopLeft(col, row) },
-            .{ .pos = .{ pos[0] + 0, pos[1] + 1, pos[2] + 1 }, .uv = uvBottomLeft(col, row) },
-            .{ .pos = .{ pos[0] + 1, pos[1] + 1, pos[2] + 1 }, .uv = uvBottomRight(col, row) },
-            .{ .pos = .{ pos[0] + 1, pos[1] + 1, pos[2] + 0 }, .uv = uvTopRight(col, row) },
+            .{ .pos = math.vec.add(pos, .{ 0, 1, 0 }), .uv = uvTopLeft(col, row) },
+            .{ .pos = math.vec.add(pos, .{ 0, 1, 1 }), .uv = uvBottomLeft(col, row) },
+            .{ .pos = math.vec.add(pos, .{ 1, 1, 1 }), .uv = uvBottomRight(col, row) },
+            .{ .pos = math.vec.add(pos, .{ 1, 1, 0 }), .uv = uvTopRight(col, row) },
         });
     }
 }
