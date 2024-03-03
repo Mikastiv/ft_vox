@@ -21,7 +21,7 @@ const assert = std.debug.assert;
 const vki = vkk.dispatch.vki;
 const vkd = vkk.dispatch.vkd;
 
-const staging_buffer_size = 1024 * 1024 * 100;
+pub const staging_buffer_size = 1024 * 1024 * 100;
 
 const mouse_sensivity = 15.0;
 const move_speed = 8.0;
@@ -661,6 +661,27 @@ pub fn immediateSubmit(device: vk.Device, queue: vk.Queue, ctx: ImmediateContext
     try vkd().endCommandBuffer(cmd);
 
     const submit: vk.SubmitInfo = .{ .command_buffer_count = 1, .p_command_buffers = @ptrCast(&cmd) };
+    try vkd().queueSubmit(queue, 1, @ptrCast(&submit), ctx.fence);
+
+    const res = try vkd().waitForFences(device, 1, @ptrCast(&ctx.fence), vk.TRUE, std.time.ns_per_s);
+    if (res != .success) return error.Timeout;
+
+    try vkd().resetFences(device, 1, @ptrCast(&ctx.fence));
+
+    try vkd().resetCommandPool(device, ctx.command_pool, .{});
+}
+
+fn beginImmediateSubmit(ctx: ImmediateContext) !vk.CommandBuffer {
+    const cmd_begin_info: vk.CommandBufferBeginInfo = .{ .flags = .{ .one_time_submit_bit = true } };
+    try vkd().beginCommandBuffer(ctx.command_buffer, &cmd_begin_info);
+
+    return ctx.command_buffer;
+}
+
+fn endImmediateSubmit(device: vk.Device, queue: vk.Queue, ctx: ImmediateContext) !void {
+    try vkd().endCommandBuffer(ctx.command_buffer);
+
+    const submit: vk.SubmitInfo = .{ .command_buffer_count = 1, .p_command_buffers = @ptrCast(&ctx.command_buffer) };
     try vkd().queueSubmit(queue, 1, @ptrCast(&submit), ctx.fence);
 
     const res = try vkd().waitForFences(device, 1, @ptrCast(&ctx.fence), vk.TRUE, std.time.ns_per_s);

@@ -9,8 +9,10 @@ pub const width = 16;
 pub const height = 256;
 pub const depth = 16;
 pub const block_count = width * height * depth;
-pub const vertex_buffer_size = @sizeOf(mesh.Vertex) * mesh.max_vertices_per_block * block_count;
-pub const index_buffer_size = @sizeOf(u16) * mesh.max_indices_per_block * block_count;
+pub const max_vertices = mesh.max_vertices_per_block * block_count;
+pub const max_indices = mesh.max_indices_per_block * block_count;
+pub const vertex_buffer_size = @sizeOf(mesh.Vertex) * max_vertices;
+pub const index_buffer_size = @sizeOf(u16) * max_indices;
 
 pub const Pos = struct {
     x: usize,

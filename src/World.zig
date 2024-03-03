@@ -4,18 +4,30 @@ const vk = @import("vulkan-zig");
 const vkk = @import("vk-kickstart");
 const Engine = @import("Engine.zig");
 const vk_utils = @import("vk_utils.zig");
+const mesh = @import("mesh.zig");
 
+const assert = std.debug.assert;
 const vkd = vkk.dispatch.vkd;
 
 const max_loaded_chunk = 32;
 
+pub const ChunkState = enum {
+    empty,
+    in_use,
+    in_queue,
+};
+
 chunk_mapping: std.AutoHashMap(Chunk.Pos, usize),
 chunks: []Chunk,
-in_use: []bool,
+states: []ChunkState,
+index_counts: []u32,
 vertex_buffers: []vk.Buffer,
 index_buffers: []vk.Buffer,
 vertex_buffer_offsets: []vk.DeviceSize,
 index_buffer_offsets: []vk.DeviceSize,
+
+vertex_upload_buffer: std.ArrayList(mesh.Vertex),
+index_upload_buffer: std.ArrayList(u32),
 
 pub fn init(
     allocator: std.mem.Allocator,
@@ -26,17 +38,21 @@ pub fn init(
 ) !@This() {
     var hmap = std.AutoHashMap(Chunk.Pos, usize).init(allocator);
     try hmap.ensureTotalCapacity(max_loaded_chunk);
+
     const self: @This() = .{
         .chunk_mapping = hmap,
         .chunks = try allocator.alloc(Chunk, max_loaded_chunk),
-        .in_use = try allocator.alloc(bool, max_loaded_chunk),
+        .states = try allocator.alloc(ChunkState, max_loaded_chunk),
+        .index_counts = try allocator.alloc(u32, max_loaded_chunk),
         .vertex_buffers = try allocator.alloc(vk.Buffer, max_loaded_chunk),
         .index_buffers = try allocator.alloc(vk.Buffer, max_loaded_chunk),
         .vertex_buffer_offsets = try allocator.alloc(vk.DeviceSize, max_loaded_chunk),
         .index_buffer_offsets = try allocator.alloc(vk.DeviceSize, max_loaded_chunk),
+        .vertex_upload_buffer = try std.ArrayList(mesh.Vertex).initCapacity(allocator, Chunk.max_vertices),
+        .index_upload_buffer = try std.ArrayList(u32).initCapacity(allocator, Chunk.max_indices),
     };
 
-    @memset(self.in_use, false);
+    @memset(self.states, .empty);
 
     for (0..max_loaded_chunk) |i| {
         const vertex_buffer_info: vk.BufferCreateInfo = .{
@@ -64,22 +80,57 @@ pub fn init(
 }
 
 pub fn addChunk(self: *@This(), chunk: *const Chunk) !void {
+    assert(self.chunk_mapping.get(chunk.pos) == null);
     const idx = self.freeSlot() orelse return error.NoFreeChunkSlot;
 
     self.chunks[idx] = chunk.*;
-    self.in_use[idx] = true;
+    self.state[idx] = .in_queue;
     try self.chunk_mapping.put(chunk.pos, idx);
 }
 
 pub fn removeChunk(self: *@This(), pos: Chunk.Pos) void {
     const idx = self.chunk_mapping.get(pos) orelse @panic("no chunk");
     _ = self.chunk_mapping.remove(pos);
-    self.in_use[idx] = false;
+    self.state[idx] = .empty;
+}
+
+pub fn uploadChunk(self: *@This(), device: vk.Device, pos: Chunk.Pos, cmd: vk.CommandBuffer, staging_buffer: Engine.AllocatedBuffer) !void {
+    const idx = self.chunk_mapping.get(pos) orelse @panic("no chunk");
+    assert(self.states[idx] == .in_queue);
+
+    self.vertex_upload_buffer.clearRetainingCapacity();
+    self.index_upload_buffer.clearRetainingCapacity();
+    try self.chunks[idx].generateMesh(&self.vertex_upload_buffer, &self.index_upload_buffer);
+
+    const vertices = self.vertex_upload_buffer.items;
+    const indices = self.index_upload_buffer.items;
+
+    const vertex_size = @sizeOf(mesh.Vertex) * vertices.len;
+    const index_size = @sizeOf(u16) * indices.len;
+    assert(vertex_size + index_size <= Engine.staging_buffer_size);
+
+    {
+        const data = try vkd().mapMemory(device, staging_buffer.memory, 0, vertex_size + index_size, .{});
+        defer vkd().unmapMemory(device, staging_buffer.memory);
+
+        const ptr: [*]u8 = @ptrCast(@alignCast(data));
+        @memcpy(ptr[0..vertex_size], std.mem.sliceAsBytes(vertices));
+        @memcpy(ptr[vertex_size .. vertex_size + index_size], std.mem.sliceAsBytes(indices));
+    }
+
+    const vertex_copy = vk.BufferCopy{ .size = vertex_size, .src_offset = 0, .dst_offset = 0 };
+    vkd().cmdCopyBuffer(cmd, staging_buffer.handle, self.vertex_buffers[idx], 1, @ptrCast(&vertex_copy));
+
+    const index_copy = vk.BufferCopy{ .size = index_size, .src_offset = vertex_size, .dst_offset = 0 };
+    vkd().cmdCopyBuffer(cmd, staging_buffer.handle, self.index_buffers[idx], 1, @ptrCast(&index_copy));
+
+    self.states[idx] = .in_use;
+    self.index_counts[idx] = indices.len;
 }
 
 fn freeSlot(self: *const @This()) ?usize {
-    for (0..self.in_use.len) |i| {
-        if (!self.in_use[i]) return i;
+    for (0..self.states.len) |i| {
+        if (self.states[i] == .empty) return i;
     }
     return null;
 }
