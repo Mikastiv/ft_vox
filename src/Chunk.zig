@@ -9,8 +9,10 @@ pub const width = 16;
 pub const height = 256;
 pub const depth = 16;
 pub const block_count = width * height * depth;
-pub const max_vertices = mesh.max_vertices_per_block * block_count;
-pub const max_indices = mesh.max_indices_per_block * block_count;
+
+// 16 * 256 * 2 + 14 * 256 * 2 + 14 * 14 * 2 + 12 * 252 * 2 + 10 * 252 * 2 + 10 * 10 * 2 + 8 * 248 * 2 + 6 * 248 * 2 + 6 * 6 * 2 + 4 * 244 * 2 + 2 * 244 * 2 + 2 * 2 * 2 = 36992
+pub const max_vertices = mesh.max_vertices_per_block * 36992;
+pub const max_indices = mesh.max_indices_per_block * 36992;
 pub const vertex_buffer_size = @sizeOf(mesh.Vertex) * max_vertices;
 pub const index_buffer_size = @sizeOf(u16) * max_indices;
 
