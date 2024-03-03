@@ -14,7 +14,7 @@ pub const max_indices = mesh.max_indices_per_block * block_count;
 pub const vertex_buffer_size = @sizeOf(mesh.Vertex) * max_vertices;
 pub const index_buffer_size = @sizeOf(u16) * max_indices;
 
-pub const Pos = [2]u32;
+pub const Pos = [2]i32;
 
 blocks: [width * height * depth]Block.Id,
 pos: Pos,

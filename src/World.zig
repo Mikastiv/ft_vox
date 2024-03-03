@@ -9,7 +9,7 @@ const mesh = @import("mesh.zig");
 const assert = std.debug.assert;
 const vkd = vkk.dispatch.vkd;
 
-const max_loaded_chunk = 32;
+pub const max_loaded_chunk = 64;
 
 pub const ChunkState = enum {
     empty,

@@ -29,8 +29,8 @@ const move_speed = 8.0;
 const ns_per_tick: comptime_int = @intFromFloat(std.time.ns_per_ms * 16.6);
 const delta_time_fixed = @as(comptime_float, ns_per_tick) / @as(comptime_float, std.time.ns_per_s);
 
-const global_vertex_buffer_size = Chunk.vertex_buffer_size * 32;
-const global_index_buffer_size = Chunk.index_buffer_size * 32;
+const global_vertex_buffer_size = Chunk.vertex_buffer_size * World.max_loaded_chunk;
+const global_index_buffer_size = Chunk.index_buffer_size * World.max_loaded_chunk;
 
 const GpuSceneData = extern struct {
     view: math.Mat4 = math.mat.identity(math.Mat4),
@@ -263,12 +263,12 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     try deletion_queue.append(index_buffer_memory.handle);
 
     std.log.info(
-        "index buffers: size: {.2}, alignment: {d}",
+        "index buffers: size: {:.2}, alignment: {d}",
         .{ std.fmt.fmtIntSizeBin(index_buffer_memory.size), index_buffer_memory.alignment },
     );
 
     std.log.info(
-        "vertex buffers: size: {.2}, alignment: {d}",
+        "vertex buffers: size: {:.2}, alignment: {d}",
         .{ std.fmt.fmtIntSizeBin(vertex_buffer_memory.size), vertex_buffer_memory.alignment },
     );
 
@@ -279,8 +279,10 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
 
     const cmd = try beginImmediateSubmit(immediate_context);
     for (0..8) |j| {
-        for (0..4) |i| {
-            chunk.pos = .{ @intCast(i), @intCast(j) };
+        for (0..8) |i| {
+            const x: i32 = @intCast(i);
+            const z: i32 = @intCast(j);
+            chunk.pos = .{ @intCast(x - 4), @intCast(z - 4) };
             try world.addChunk(chunk);
             try world.uploadChunk(device.handle, chunk.pos, cmd, staging_buffer);
         }
