@@ -277,14 +277,14 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     var world = try World.init(allocator, device.handle, vertex_buffer_memory, index_buffer_memory, &deletion_queue);
 
     const chunk = try allocator.create(Chunk);
-    chunk.default(.{ 0, 0 });
+    chunk.default();
 
     const cmd = try beginImmediateSubmit(immediate_context);
     for (0..8) |j| {
         for (0..8) |i| {
             const x: i32 = @intCast(i);
             const z: i32 = @intCast(j);
-            chunk.pos = .{ @intCast(x - 4), @intCast(z - 4) };
+            chunk.pos = .{ @intCast(x - 4), 0, @intCast(z - 4) };
             try world.addChunk(chunk);
             try world.uploadChunk(device.handle, chunk.pos, cmd, staging_buffer);
         }
@@ -411,31 +411,37 @@ fn fixedUpdate(self: *@This()) !void {
     const right = math.vec.mul(self.camera.right, speed);
     const up = math.vec.mul(self.camera.up, speed);
 
-    const prev_chunk: Chunk.Pos = .{ @intFromFloat(self.camera.pos[0] / Chunk.width), @intFromFloat(self.camera.pos[2] / Chunk.depth) };
+    const prev_chunk: math.Vec3i = .{ @intFromFloat(self.camera.pos[0] / Chunk.width), 0, @intFromFloat(self.camera.pos[2] / Chunk.depth) };
     if (self.window.keyboard.keys[c.GLFW_KEY_W].down) self.camera.pos = math.vec.add(self.camera.pos, forward);
     if (self.window.keyboard.keys[c.GLFW_KEY_S].down) self.camera.pos = math.vec.sub(self.camera.pos, forward);
     if (self.window.keyboard.keys[c.GLFW_KEY_D].down) self.camera.pos = math.vec.add(self.camera.pos, right);
     if (self.window.keyboard.keys[c.GLFW_KEY_A].down) self.camera.pos = math.vec.sub(self.camera.pos, right);
     if (self.window.keyboard.keys[c.GLFW_KEY_SPACE].down) self.camera.pos = math.vec.add(self.camera.pos, up);
     if (self.window.keyboard.keys[c.GLFW_KEY_LEFT_SHIFT].down) self.camera.pos = math.vec.sub(self.camera.pos, up);
-    const current_chunk: Chunk.Pos = .{ @intFromFloat(self.camera.pos[0] / Chunk.width), @intFromFloat(self.camera.pos[2] / Chunk.depth) };
+    const current_chunk: math.Vec3i = .{ @intFromFloat(self.camera.pos[0] / Chunk.width), 0, @intFromFloat(self.camera.pos[2] / Chunk.depth) };
 
-    if (current_chunk[0] != prev_chunk[0] or current_chunk[1] != prev_chunk[1]) {
-        const min = .{ current_chunk[0] - 4, current_chunk[1] - 4 };
-        const max = .{ current_chunk[0] + 4, current_chunk[1] + 4 };
+    if (current_chunk[0] != prev_chunk[0] or
+        current_chunk[1] != prev_chunk[1] or
+        current_chunk[2] != prev_chunk[2])
+    {
+        const min = .{ current_chunk[0] - 4, 0, current_chunk[2] - 4 };
+        const max = .{ current_chunk[0] + 4, 0, current_chunk[2] + 4 };
 
-        for (self.world.chunks) |*chunk| {
-            if (chunk.pos[0] < min[0] or chunk.pos[0] > max[0] or chunk.pos[1] < min[1] or chunk.pos[1] > max[1]) {
-                self.world.removeChunk(chunk.pos);
+        for (self.world.chunks.items(.pos)) |pos| {
+            if (pos[0] < min[0] or pos[0] > max[0] or
+                pos[1] < min[1] or pos[1] > max[1] or
+                pos[2] < min[2] or pos[2] > max[2])
+            {
+                self.world.removeChunk(pos);
             }
         }
 
-        self.chunk_temp.default(.{ 0, 0 });
+        self.chunk_temp.default();
         for (0..8) |j| {
             for (0..8) |i| {
                 const x: i32 = @intCast(i);
                 const z: i32 = @intCast(j);
-                self.chunk_temp.pos = .{ current_chunk[0] + x - 4, current_chunk[1] + z - 4 };
+                self.chunk_temp.pos = .{ current_chunk[0] + x - 4, 0, current_chunk[2] + z - 4 };
                 try self.world.addChunk(self.chunk_temp);
             }
         }
@@ -492,11 +498,11 @@ fn draw(self: *@This()) !void {
 
     var uploaded = false;
     self.timer.reset();
-    for (0..self.world.chunks.len) |idx| {
+    for (self.world.chunks.items(.pos), 0..) |pos, idx| {
         if (self.world.states[idx] != .in_queue) continue;
 
         uploaded = true;
-        try self.world.uploadChunk(self.device.handle, self.world.chunks[idx].pos, cmd, self.staging_buffer);
+        try self.world.uploadChunk(self.device.handle, pos, cmd, self.staging_buffer);
     }
     if (uploaded) std.log.info("chunk upload {}", .{std.fmt.fmtDuration(self.timer.lap())});
 
@@ -530,7 +536,7 @@ fn draw(self: *@This()) !void {
     };
     vkd().cmdSetScissor(cmd, 0, 1, @ptrCast(&scissor));
 
-    for (0..self.world.chunks.len) |idx| {
+    for (self.world.chunks.items(.pos), 0..) |pos, idx| {
         if (self.world.states[idx] != .in_use) continue;
 
         vkd().cmdBindVertexBuffers(cmd, 0, 1, @ptrCast(&self.world.vertex_buffers[idx]), &[_]vk.DeviceSize{0});
@@ -538,10 +544,8 @@ fn draw(self: *@This()) !void {
         vkd().cmdBindDescriptorSets(cmd, .graphics, self.default_pipeline_layout, 0, 1, @ptrCast(&self.descriptor_set), 1, @ptrCast(&uniform_offset));
 
         var model = math.mat.identity(math.Mat4);
-        model = math.mat.translate(&model, .{ @floatFromInt(self.world.chunks[idx].pos[0] * 16), 0, @floatFromInt(self.world.chunks[idx].pos[1] * 16) });
-        const push_constants: GpuPushConstants = .{
-            .model = model,
-        };
+        model = math.mat.translate(&model, .{ @floatFromInt(pos[0] * Chunk.width), @floatFromInt(pos[1] * Chunk.height), @floatFromInt(pos[2] * Chunk.depth) });
+        const push_constants: GpuPushConstants = .{ .model = model };
         vkd().cmdPushConstants(cmd, self.default_pipeline_layout, .{ .vertex_bit = true }, 0, @sizeOf(GpuPushConstants), @ptrCast(&push_constants));
 
         vkd().cmdDrawIndexed(cmd, self.world.index_counts[idx], 1, 0, 0, 0);
