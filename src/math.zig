@@ -2,9 +2,16 @@ const std = @import("std");
 
 // Math library for Vulkan
 
-pub const Vec2 = [2]f32;
-pub const Vec3 = [3]f32;
-pub const Vec4 = [4]f32;
+pub fn Vec(comptime T: type, comptime size: usize) type {
+    return [size]T;
+}
+
+pub const Vec2i = Vec(i32, 2);
+pub const Vec3i = Vec(i32, 3);
+pub const Vec4i = Vec(i32, 4);
+pub const Vec2 = Vec(f32, 2);
+pub const Vec3 = Vec(f32, 3);
+pub const Vec4 = Vec(f32, 4);
 pub const Mat2 = [2]Vec2;
 pub const Mat3 = [3]Vec3;
 pub const Mat4 = [4]Vec4;
@@ -14,42 +21,58 @@ fn unsupportedType(comptime T: type) void {
 }
 
 fn vecsize(comptime T: type) comptime_int {
-    return switch (T) {
-        Vec2 => 2,
-        Vec3 => 3,
-        Vec4 => 4,
+    return switch (@typeInfo(T)) {
+        .Array => |a| a.len,
+        else => unsupportedType(T),
+    };
+}
+
+fn VecOfChildType(comptime T: type, comptime size: usize) type {
+    return switch (@typeInfo(T)) {
+        .Array => |a| [size]a.child,
+        else => unsupportedType(T),
+    };
+}
+
+fn ChildType(comptime T: type) type {
+    return switch (@typeInfo(T)) {
+        .Array => |a| a.child,
         else => unsupportedType(T),
     };
 }
 
 pub const vec = struct {
-    pub inline fn vec2(v: anytype) Vec2 {
-        return switch (@TypeOf(v)) {
-            Vec3, Vec4 => .{ v[0], v[1] },
+    pub inline fn vec2(v: anytype) VecOfChildType(@TypeOf(v), 2) {
+        const size = vecsize(@TypeOf(v));
+        return switch (size) {
+            3, 4 => .{ v[0], v[1] },
             else => unsupportedType(@TypeOf(v)),
         };
     }
 
-    pub inline fn vec3(v: anytype) Vec3 {
-        return switch (@TypeOf(v)) {
-            Vec2 => .{ v[0], v[1], 0 },
-            Vec4 => .{ v[0], v[1], v[2] },
+    pub inline fn vec3(v: anytype) VecOfChildType(@TypeOf(v), 3) {
+        const size = vecsize(@TypeOf(v));
+        return switch (size) {
+            2 => .{ v[0], v[1], 0 },
+            4 => .{ v[0], v[1], v[2] },
             else => unsupportedType(@TypeOf(v)),
         };
     }
 
-    pub inline fn vec4(v: anytype) Vec4 {
-        return switch (@TypeOf(v)) {
-            Vec2 => .{ v[0], v[1], 0, 1 },
-            Vec3 => .{ v[0], v[1], v[2], 1 },
+    pub inline fn vec4(v: anytype) VecOfChildType(@TypeOf(v), 4) {
+        const size = vecsize(@TypeOf(v));
+        return switch (size) {
+            2 => .{ v[0], v[1], 0, 1 },
+            3 => .{ v[0], v[1], v[2], 1 },
             else => unsupportedType(@TypeOf(v)),
         };
     }
 
-    pub inline fn vec4Dir(v: anytype) Vec4 {
-        return switch (@TypeOf(v)) {
-            Vec2 => .{ v[0], v[1], 0, 0 },
-            Vec3 => .{ v[0], v[1], v[2], 0 },
+    pub inline fn vec4Dir(v: anytype) VecOfChildType(@TypeOf(v), 4) {
+        const size = vecsize(@TypeOf(v));
+        return switch (size) {
+            2 => .{ v[0], v[1], 0, 0 },
+            3 => .{ v[0], v[1], v[2], 0 },
             else => unsupportedType(@TypeOf(v)),
         };
     }
@@ -98,7 +121,7 @@ pub const vec = struct {
         return out;
     }
 
-    pub inline fn mul(a: anytype, b: f32) @TypeOf(a) {
+    pub inline fn mul(a: anytype, b: ChildType(@TypeOf(a))) @TypeOf(a) {
         const size = vecsize(@TypeOf(a));
 
         var out: @TypeOf(a) = undefined;
@@ -109,7 +132,7 @@ pub const vec = struct {
         return out;
     }
 
-    pub inline fn div(a: anytype, b: f32) @TypeOf(a) {
+    pub inline fn div(a: anytype, b: ChildType(@TypeOf(a))) @TypeOf(a) {
         const size = vecsize(@TypeOf(a));
 
         var out: @TypeOf(a) = undefined;
@@ -120,14 +143,15 @@ pub const vec = struct {
         return out;
     }
 
-    pub inline fn length(v: anytype) f32 {
+    pub inline fn length(v: anytype) ChildType(@TypeOf(v)) {
+        if (@typeInfo(ChildType(@TypeOf(v))) != .Float) @compileError("must be a floating point type");
         return @sqrt(length2(v));
     }
 
-    pub inline fn length2(v: anytype) f32 {
+    pub inline fn length2(v: anytype) ChildType(@TypeOf(v)) {
         const size = vecsize(@TypeOf(v));
 
-        var out: f32 = 0.0;
+        var out: ChildType(@TypeOf(v)) = 0;
         inline for (0..size) |i| {
             out += v[i] * v[i];
         }
@@ -151,10 +175,10 @@ pub const vec = struct {
         return unit(v);
     }
 
-    pub inline fn dot(a: anytype, b: @TypeOf(a)) f32 {
+    pub inline fn dot(a: anytype, b: @TypeOf(a)) ChildType(@TypeOf(a)) {
         const size = vecsize(@TypeOf(a));
 
-        var out: f32 = 0.0;
+        var out: ChildType(@TypeOf(a)) = 0;
         inline for (0..size) |i| {
             out += a[i] * b[i];
         }
@@ -162,7 +186,9 @@ pub const vec = struct {
         return out;
     }
 
-    pub inline fn cross(a: Vec3, b: Vec3) Vec3 {
+    pub inline fn cross(a: anytype, b: @TypeOf(a)) @TypeOf(a) {
+        const size = vecsize(@TypeOf(a));
+        if (size != 3) @compileError("must be a 3d vector");
         return .{
             (a[1] * b[2]) - (a[2] * b[1]),
             (a[2] * b[0]) - (a[0] * b[2]),
@@ -170,7 +196,7 @@ pub const vec = struct {
         };
     }
 
-    pub inline fn distance(a: anytype, b: @TypeOf(a)) f32 {
+    pub inline fn distance(a: anytype, b: @TypeOf(a)) ChildType(@TypeOf(a)) {
         return length(sub(a, b));
     }
 };
@@ -184,7 +210,7 @@ fn matsize(comptime T: type) comptime_int {
     };
 }
 
-fn pointerType(comptime T: type) type {
+fn PointerType(comptime T: type) type {
     if (@typeInfo(T) != .Pointer) {
         @compileError("only accepts pointers");
     }
@@ -192,14 +218,14 @@ fn pointerType(comptime T: type) type {
 }
 
 fn checkSamePointerType(comptime A: type, comptime B: type) void {
-    if (pointerType(A) != pointerType(B)) {
+    if (PointerType(A) != PointerType(B)) {
         @compileError("a and b must be the same type");
     }
 }
 
 pub const mat = struct {
     pub inline fn mat2(m: anytype) Mat2 {
-        const T = pointerType(@TypeOf(m));
+        const T = PointerType(@TypeOf(m));
         return switch (T) {
             Mat3, Mat4 => .{
                 .{ m[0][0], m[0][1] },
@@ -210,7 +236,7 @@ pub const mat = struct {
     }
 
     pub inline fn mat3(m: anytype) Mat3 {
-        const T = pointerType(@TypeOf(m));
+        const T = PointerType(@TypeOf(m));
         return switch (T) {
             Mat2 => .{
                 .{ m[0][0], m[0][1], 0 },
@@ -227,7 +253,7 @@ pub const mat = struct {
     }
 
     pub inline fn mat4(m: anytype) Mat4 {
-        const T = pointerType(@TypeOf(m));
+        const T = PointerType(@TypeOf(m));
         return switch (T) {
             Mat2 => .{
                 .{ m[0][0], m[0][1], 0, 0 },
@@ -283,10 +309,10 @@ pub const mat = struct {
         return out;
     }
 
-    pub fn add(a: anytype, b: anytype) pointerType(@TypeOf(a)) {
+    pub fn add(a: anytype, b: anytype) PointerType(@TypeOf(a)) {
         checkSamePointerType(@TypeOf(a), @TypeOf(b));
 
-        const T = pointerType(@TypeOf(a));
+        const T = PointerType(@TypeOf(a));
         const size = matsize(T);
 
         var out: T = undefined;
@@ -297,10 +323,10 @@ pub const mat = struct {
         return out;
     }
 
-    pub fn sub(a: anytype, b: anytype) pointerType(@TypeOf(a)) {
+    pub fn sub(a: anytype, b: anytype) PointerType(@TypeOf(a)) {
         checkSamePointerType(@TypeOf(a), @TypeOf(b));
 
-        const T = pointerType(@TypeOf(a));
+        const T = PointerType(@TypeOf(a));
         const size = matsize(T);
 
         var out: T = undefined;
@@ -311,8 +337,8 @@ pub const mat = struct {
         return out;
     }
 
-    pub fn divScalar(a: anytype, b: f32) pointerType(@TypeOf(a)) {
-        const T = pointerType(@TypeOf(a));
+    pub fn divScalar(a: anytype, b: f32) PointerType(@TypeOf(a)) {
+        const T = PointerType(@TypeOf(a));
         const size = matsize(T);
 
         var out: T = undefined;
@@ -323,8 +349,8 @@ pub const mat = struct {
         return out;
     }
 
-    pub fn mulScalar(a: anytype, b: f32) pointerType(@TypeOf(a)) {
-        const T = pointerType(@TypeOf(a));
+    pub fn mulScalar(a: anytype, b: f32) PointerType(@TypeOf(a)) {
+        const T = PointerType(@TypeOf(a));
         const size = matsize(T);
 
         var out: T = undefined;
@@ -336,7 +362,7 @@ pub const mat = struct {
     }
 
     pub fn mulVec(m: anytype, v: anytype) @TypeOf(v) {
-        const T = pointerType(@TypeOf(m));
+        const T = PointerType(@TypeOf(m));
         const mat_size = matsize(T);
         const vec_size = vecsize(@TypeOf(v));
         if (mat_size != vec_size) @compileError("incompatible matrix and vector");
@@ -352,10 +378,10 @@ pub const mat = struct {
         return out;
     }
 
-    pub fn mul(a: anytype, b: anytype) pointerType(@TypeOf(a)) {
+    pub fn mul(a: anytype, b: anytype) PointerType(@TypeOf(a)) {
         checkSamePointerType(@TypeOf(a), @TypeOf(b));
 
-        const T = pointerType(@TypeOf(a));
+        const T = PointerType(@TypeOf(a));
         const size = matsize(T);
 
         var out: T = undefined;
@@ -372,8 +398,8 @@ pub const mat = struct {
         return out;
     }
 
-    pub fn transpose(m: anytype) pointerType(@TypeOf(m)) {
-        const T = pointerType(@TypeOf(m));
+    pub fn transpose(m: anytype) PointerType(@TypeOf(m)) {
+        const T = PointerType(@TypeOf(m));
         const size = matsize(T);
 
         var out: T = undefined;
@@ -592,7 +618,7 @@ pub const mat = struct {
     }
 
     pub fn determinant(m: anytype) f32 {
-        const T = pointerType(@TypeOf(m));
+        const T = PointerType(@TypeOf(m));
 
         return switch (T) {
             Mat2 => m[0][0] * m[1][1] - m[1][0] * m[0][1],
@@ -622,8 +648,8 @@ pub const mat = struct {
         };
     }
 
-    pub fn inverseTranspose(m: anytype) pointerType(@TypeOf(m)) {
-        const T = pointerType(@TypeOf(m));
+    pub fn inverseTranspose(m: anytype) PointerType(@TypeOf(m)) {
+        const T = PointerType(@TypeOf(m));
 
         return switch (T) {
             Mat2 => blk: {
