@@ -17,7 +17,7 @@ pub fn init(pos: math.Vec3) @This() {
         .dir = .{ 0, 0, 0 },
         .smooth_dir = .{ 0, 0, 0 },
         .pitch = 0,
-        .yaw = 0,
+        .yaw = 90,
     };
 
     self.update(.{ 0, 0 });

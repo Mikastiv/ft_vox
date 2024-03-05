@@ -17,10 +17,18 @@ pub const max_indices = mesh.max_indices_per_block * block_count / 2;
 pub const vertex_buffer_size = @sizeOf(mesh.Vertex) * max_vertices;
 pub const index_buffer_size = @sizeOf(u16) * max_indices;
 
+pub const directions: [6]math.Vec3i = .{
+    .{ 0, 0, 1 },
+    .{ 0, 0, -1 },
+    .{ 0, 1, 0 },
+    .{ 0, -1, 0 },
+    .{ 1, 0, 0 },
+    .{ -1, 0, 0 },
+};
+
 const Blocks = [width * height * depth]Block.Id;
 
 blocks: Blocks = std.mem.zeroes(Blocks),
-pos: math.Vec3i = .{ 0, 0, 0 },
 
 pub fn default(self: *@This()) void {
     self.blocks = std.mem.zeroes(@TypeOf(self.blocks));
@@ -42,13 +50,14 @@ pub fn generateMesh(
     self: *const @This(),
     out_vertices: *std.ArrayList(mesh.Vertex),
     out_indices: *std.ArrayList(u16),
+    neighbor_chunks: [6]?*const @This(),
 ) !void {
     for (0..depth) |z| {
         for (0..height) |y| {
             for (0..width) |x| {
                 const block_id = self.blocks[xyzTo1d(x, y, z)];
                 if (block_id == .air) continue;
-                const sides = self.getBlockSides(x, y, z);
+                const sides = self.getBlockSides(x, y, z, neighbor_chunks);
                 if (sides.toInt() == mesh.CubeSides.empty.toInt()) continue;
                 mesh.generateCube(
                     sides,
@@ -66,7 +75,7 @@ pub fn generateMesh(
     }
 }
 
-pub fn getBlockSides(self: *const @This(), x: usize, y: usize, z: usize) mesh.CubeSides {
+pub fn getBlockSides(self: *const @This(), x: usize, y: usize, z: usize, neighbor_chunks: [6]?*const @This()) mesh.CubeSides {
     assert(x < width);
     assert(y < height);
     assert(z < depth);
@@ -80,14 +89,6 @@ pub fn getBlockSides(self: *const @This(), x: usize, y: usize, z: usize) mesh.Cu
         mesh.CubeSides.east_side,
         mesh.CubeSides.west_side,
     };
-    const directions: [6]math.Vec3i = .{
-        .{ 0, 0, 1 },
-        .{ 0, 0, -1 },
-        .{ 0, 1, 0 },
-        .{ 0, -1, 0 },
-        .{ 1, 0, 0 },
-        .{ -1, 0, 0 },
-    };
 
     var sides: mesh.CubeSides = .{};
     for (0..6) |i| {
@@ -99,7 +100,17 @@ pub fn getBlockSides(self: *const @This(), x: usize, y: usize, z: usize) mesh.Cu
             if (self.blocks[idx] == .air)
                 sides = sides.merge(bit);
         } else {
-            sides = sides.merge(bit);
+            if (neighbor_chunks[i]) |neighbor_chunk| {
+                const neighbor_chunk_idx = xyzTo1d(
+                    @intCast(@mod(neighbor[0], width)),
+                    @intCast(@mod(neighbor[1], height)),
+                    @intCast(@mod(neighbor[2], depth)),
+                );
+                if (neighbor_chunk.blocks[neighbor_chunk_idx] == .air)
+                    sides = sides.merge(bit);
+            } else {
+                sides = sides.merge(bit);
+            }
         }
     }
 

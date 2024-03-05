@@ -282,10 +282,12 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
         for (0..chunk_radius) |i| {
             const x: i32 = @intCast(i);
             const z: i32 = @intCast(j);
-            chunk.pos = .{ @intCast(x - chunk_radius / 2), 0, @intCast(z - chunk_radius / 2) };
-            try world.addChunk(chunk);
-            _ = try world.uploadChunkFromQueue(device.handle, cmd, staging_buffer);
+            const pos: math.Vec3i = .{ @intCast(x - chunk_radius / 2), 0, @intCast(z - chunk_radius / 2) };
+            try world.addChunk(chunk, pos);
         }
+    }
+    while (world.upload_queue.len > 0) {
+        _ = try world.uploadChunkFromQueue(device.handle, cmd, staging_buffer);
     }
 
     try endImmediateSubmit(device.handle, device.graphics_queue, immediate_context, cmd);
@@ -431,12 +433,13 @@ fn fixedUpdate(self: *@This()) !void {
         const min = .{ current_chunk[0] - chunk_radius / 2, 0, current_chunk[2] - chunk_radius / 2 };
         const max = .{ current_chunk[0] + chunk_radius / 2, 0, current_chunk[2] + chunk_radius / 2 };
 
-        for (self.world.chunks.items(.pos)) |pos| {
-            if (pos[0] < min[0] or pos[0] > max[0] or
-                pos[1] < min[1] or pos[1] > max[1] or
-                pos[2] < min[2] or pos[2] > max[2])
+        var it = self.world.chunkIterator();
+        while (it.next()) |chunk| {
+            if (chunk.position[0] < min[0] or chunk.position[0] > max[0] or
+                chunk.position[1] < min[1] or chunk.position[1] > max[1] or
+                chunk.position[2] < min[2] or chunk.position[2] > max[2])
             {
-                self.world.removeChunk(pos);
+                self.world.removeChunk(chunk.position);
             }
         }
 
@@ -445,8 +448,8 @@ fn fixedUpdate(self: *@This()) !void {
             for (0..chunk_radius) |i| {
                 const x: i32 = @intCast(i);
                 const z: i32 = @intCast(j);
-                self.chunk_temp.pos = .{ current_chunk[0] + x - chunk_radius / 2, 0, current_chunk[2] + z - chunk_radius / 2 };
-                try self.world.addChunk(self.chunk_temp);
+                const pos = .{ current_chunk[0] + x - chunk_radius / 2, 0, current_chunk[2] + z - chunk_radius / 2 };
+                try self.world.addChunk(self.chunk_temp, pos);
             }
         }
     }
@@ -541,19 +544,20 @@ fn draw(self: *@This()) !void {
     };
     vkd().cmdSetScissor(cmd, 0, 1, @ptrCast(&scissor));
 
-    for (self.world.chunks.items(.pos), 0..) |pos, idx| {
-        if (self.world.states[idx] != .loaded) continue;
+    var chunk_it = self.world.chunkIterator();
+    while (chunk_it.next()) |chunk| {
+        if (chunk.state != .loaded) continue;
 
-        vkd().cmdBindVertexBuffers(cmd, 0, 1, @ptrCast(&self.world.vertex_buffers[idx]), &[_]vk.DeviceSize{0});
-        vkd().cmdBindIndexBuffer(cmd, self.world.index_buffers[idx], 0, .uint16);
+        vkd().cmdBindVertexBuffers(cmd, 0, 1, @ptrCast(&chunk.vertex_buffer), &[_]vk.DeviceSize{0});
+        vkd().cmdBindIndexBuffer(cmd, chunk.index_buffer, 0, .uint16);
         vkd().cmdBindDescriptorSets(cmd, .graphics, self.default_pipeline_layout, 0, 1, @ptrCast(&self.descriptor_set), 1, @ptrCast(&uniform_offset));
 
         var model = math.mat.identity(math.Mat4);
-        model = math.mat.translate(&model, .{ @floatFromInt(pos[0] * Chunk.width), @floatFromInt(pos[1] * Chunk.height), @floatFromInt(pos[2] * Chunk.depth) });
+        model = math.mat.translate(&model, .{ @floatFromInt(chunk.position[0] * Chunk.width), @floatFromInt(chunk.position[1] * Chunk.height), @floatFromInt(chunk.position[2] * Chunk.depth) });
         const push_constants: GpuPushConstants = .{ .model = model };
         vkd().cmdPushConstants(cmd, self.default_pipeline_layout, .{ .vertex_bit = true }, 0, @sizeOf(GpuPushConstants), @ptrCast(&push_constants));
 
-        vkd().cmdDrawIndexed(cmd, self.world.index_counts[idx], 1, 0, 0, 0);
+        vkd().cmdDrawIndexed(cmd, chunk.index_count, 1, 0, 0, 0);
     }
 
     c.cImGui_ImplVulkan_RenderDrawData(c.ImGui_GetDrawData(), c.vkZigHandleToC(c.VkCommandBuffer, cmd));

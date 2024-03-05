@@ -21,7 +21,8 @@ pub const ChunkState = enum {
 const ChunkUploadQueue = std.BoundedArray(math.Vec3i, 256);
 
 chunk_mapping: std.AutoHashMap(math.Vec3i, usize),
-chunks: std.MultiArrayList(Chunk),
+chunks: []Chunk,
+positions: []math.Vec3i,
 states: []ChunkState,
 index_counts: []u32,
 vertex_buffers: []vk.Buffer,
@@ -45,15 +46,10 @@ pub fn init(
     var hmap = std.AutoHashMap(math.Vec3i, usize).init(allocator);
     try hmap.ensureTotalCapacity(max_loaded_chunk);
 
-    var chunks = std.MultiArrayList(Chunk){};
-    try chunks.ensureTotalCapacity(allocator, max_loaded_chunk);
-    for (0..max_loaded_chunk) |_| {
-        _ = try chunks.addOne(allocator);
-    }
-
     const self: @This() = .{
         .chunk_mapping = hmap,
-        .chunks = chunks,
+        .chunks = try allocator.alloc(Chunk, max_loaded_chunk),
+        .positions = try allocator.alloc(math.Vec3i, max_loaded_chunk),
         .states = try allocator.alloc(ChunkState, max_loaded_chunk),
         .index_counts = try allocator.alloc(u32, max_loaded_chunk),
         .vertex_buffers = try allocator.alloc(vk.Buffer, max_loaded_chunk),
@@ -93,14 +89,15 @@ pub fn init(
     return self;
 }
 
-pub fn addChunk(self: *@This(), chunk: *const Chunk) !void {
-    if (self.chunk_mapping.get(chunk.pos) != null) return;
+pub fn addChunk(self: *@This(), chunk: *const Chunk, pos: math.Vec3i) !void {
+    if (self.chunk_mapping.get(pos) != null) return;
     const idx = self.freeSlot() orelse return error.NoFreeChunkSlot;
 
-    self.chunks.set(idx, chunk.*);
+    self.chunks[idx] = chunk.*;
     self.states[idx] = .in_queue;
-    try self.chunk_mapping.put(chunk.pos, idx);
-    try self.upload_queue.append(chunk.pos);
+    self.positions[idx] = pos;
+    try self.chunk_mapping.put(pos, idx);
+    try self.upload_queue.append(pos);
 }
 
 pub fn removeChunk(self: *@This(), pos: math.Vec3i) void {
@@ -130,7 +127,18 @@ fn uploadChunk(self: *@This(), device: vk.Device, pos: math.Vec3i, cmd: vk.Comma
 
     self.vertex_upload_buffer.clearRetainingCapacity();
     self.index_upload_buffer.clearRetainingCapacity();
-    try self.chunks.get(idx).generateMesh(&self.vertex_upload_buffer, &self.index_upload_buffer);
+    var neighbor_chunks: [6]?*const Chunk = undefined;
+    for (0..6) |i| {
+        const neighbor_idx = self.chunk_mapping.get(math.vec.add(pos, Chunk.directions[i]));
+        if (neighbor_idx) |n_idx| {
+            const ptr = &self.chunks[n_idx];
+            // _ = ptr;
+            neighbor_chunks[i] = ptr;
+        } else {
+            neighbor_chunks[i] = null;
+        }
+    }
+    try self.chunks[idx].generateMesh(&self.vertex_upload_buffer, &self.index_upload_buffer, neighbor_chunks);
 
     const vertices = self.vertex_upload_buffer.items;
     const indices = self.index_upload_buffer.items;
@@ -163,4 +171,48 @@ fn freeSlot(self: *const @This()) ?usize {
         if (self.states[i] == .empty) return i;
     }
     return null;
+}
+
+pub const ChunkData = struct {
+    data: *Chunk,
+    position: math.Vec3i,
+    state: ChunkState,
+    vertex_buffer: vk.Buffer,
+    index_buffer: vk.Buffer,
+    index_count: u32,
+};
+
+pub const ChunkIterator = struct {
+    inner: std.AutoHashMap(math.Vec3i, usize).Iterator,
+    chunks: []Chunk,
+    positions: []math.Vec3i,
+    states: []ChunkState,
+    vertex_buffers: []vk.Buffer,
+    index_buffers: []vk.Buffer,
+    index_counts: []u32,
+
+    pub fn next(self: *@This()) ?ChunkData {
+        const entry = self.inner.next() orelse return null;
+        const idx = entry.value_ptr.*;
+        return .{
+            .data = &self.chunks[idx],
+            .position = self.positions[idx],
+            .state = self.states[idx],
+            .vertex_buffer = self.vertex_buffers[idx],
+            .index_buffer = self.index_buffers[idx],
+            .index_count = self.index_counts[idx],
+        };
+    }
+};
+
+pub fn chunkIterator(self: *@This()) ChunkIterator {
+    return .{
+        .inner = self.chunk_mapping.iterator(),
+        .chunks = self.chunks,
+        .positions = self.positions,
+        .states = self.states,
+        .vertex_buffers = self.vertex_buffers,
+        .index_buffers = self.index_buffers,
+        .index_counts = self.index_counts,
+    };
 }
