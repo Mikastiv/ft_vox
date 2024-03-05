@@ -286,7 +286,7 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
             const z: i32 = @intCast(j);
             chunk.pos = .{ @intCast(x - 4), 0, @intCast(z - 4) };
             try world.addChunk(chunk);
-            try world.uploadChunk(device.handle, chunk.pos, cmd, staging_buffer);
+            _ = try world.uploadChunkFromQueue(device.handle, cmd, staging_buffer);
         }
     }
 
@@ -496,14 +496,8 @@ fn draw(self: *@This()) !void {
     const command_begin_info: vk.CommandBufferBeginInfo = .{ .flags = .{ .one_time_submit_bit = true } };
     try vkd().beginCommandBuffer(cmd, &command_begin_info);
 
-    var uploaded = false;
     self.timer.reset();
-    for (self.world.chunks.items(.pos), 0..) |pos, idx| {
-        if (self.world.states[idx] != .in_queue) continue;
-
-        uploaded = true;
-        try self.world.uploadChunk(self.device.handle, pos, cmd, self.staging_buffer);
-    }
+    const uploaded = try self.world.uploadChunkFromQueue(device, cmd, self.staging_buffer);
     if (uploaded) std.log.info("chunk upload {}", .{std.fmt.fmtDuration(self.timer.lap())});
 
     const clear_value = vk.ClearValue{ .color = .{ .float_32 = .{ 0.1, 0.1, 0.1, 1 } } };

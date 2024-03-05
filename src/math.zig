@@ -199,6 +199,16 @@ pub const vec = struct {
     pub inline fn distance(a: anytype, b: @TypeOf(a)) ChildType(@TypeOf(a)) {
         return length(sub(a, b));
     }
+
+    pub inline fn eql(a: anytype, b: @TypeOf(a)) bool {
+        const size = vecsize(@TypeOf(a));
+        return switch (size) {
+            2 => a[0] == b[0] and a[1] == b[1],
+            3 => a[0] == b[0] and a[1] == b[1] and a[2] == b[2],
+            4 => a[0] == b[0] and a[1] == b[1] and a[2] == b[2] and a[3] == b[3],
+            else => unsupportedType(@TypeOf(a)),
+        };
+    }
 };
 
 fn matsize(comptime T: type) comptime_int {

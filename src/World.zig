@@ -10,13 +10,15 @@ const math = @import("math.zig");
 const assert = std.debug.assert;
 const vkd = vkk.dispatch.vkd;
 
-pub const max_loaded_chunk = 64;
+pub const max_loaded_chunk = 128;
 
 pub const ChunkState = enum {
     empty,
     in_use,
     in_queue,
 };
+
+const ChunkUploadQueue = std.BoundedArray(math.Vec3i, 128);
 
 chunk_mapping: std.AutoHashMap(math.Vec3i, usize),
 chunks: std.MultiArrayList(Chunk),
@@ -26,6 +28,7 @@ vertex_buffers: []vk.Buffer,
 index_buffers: []vk.Buffer,
 vertex_buffer_offsets: []vk.DeviceSize,
 index_buffer_offsets: []vk.DeviceSize,
+upload_queue: ChunkUploadQueue,
 
 vertex_upload_buffer: std.ArrayList(mesh.Vertex),
 index_upload_buffer: std.ArrayList(u16),
@@ -57,6 +60,7 @@ pub fn init(
         .index_buffers = try allocator.alloc(vk.Buffer, max_loaded_chunk),
         .vertex_buffer_offsets = try allocator.alloc(vk.DeviceSize, max_loaded_chunk),
         .index_buffer_offsets = try allocator.alloc(vk.DeviceSize, max_loaded_chunk),
+        .upload_queue = try ChunkUploadQueue.init(0),
         .vertex_upload_buffer = try std.ArrayList(mesh.Vertex).initCapacity(allocator, Chunk.max_vertices),
         .index_upload_buffer = try std.ArrayList(u16).initCapacity(allocator, Chunk.max_indices),
         .timer = try std.time.Timer.start(),
@@ -96,25 +100,37 @@ pub fn addChunk(self: *@This(), chunk: *const Chunk) !void {
     self.chunks.set(idx, chunk.*);
     self.states[idx] = .in_queue;
     try self.chunk_mapping.put(chunk.pos, idx);
+    try self.upload_queue.append(chunk.pos);
 }
 
 pub fn removeChunk(self: *@This(), pos: math.Vec3i) void {
     const idx = self.chunk_mapping.get(pos) orelse return;
     _ = self.chunk_mapping.remove(pos);
     self.states[idx] = .empty;
+    for (self.upload_queue.constSlice(), 0..) |p, i| {
+        if (math.vec.eql(p, pos)) {
+            _ = self.upload_queue.orderedRemove(i);
+            break;
+        }
+    }
 }
 
-pub fn uploadChunk(self: *@This(), device: vk.Device, pos: math.Vec3i, cmd: vk.CommandBuffer, staging_buffer: Engine.AllocatedBuffer) !void {
+pub fn uploadChunkFromQueue(self: *@This(), device: vk.Device, cmd: vk.CommandBuffer, staging_buffer: Engine.AllocatedBuffer) !bool {
+    if (self.upload_queue.len == 0) return false;
+
+    const pos = self.upload_queue.orderedRemove(0);
+    try self.uploadChunk(device, pos, cmd, staging_buffer);
+
+    return true;
+}
+
+fn uploadChunk(self: *@This(), device: vk.Device, pos: math.Vec3i, cmd: vk.CommandBuffer, staging_buffer: Engine.AllocatedBuffer) !void {
     const idx = self.chunk_mapping.get(pos) orelse @panic("no chunk");
     assert(self.states[idx] == .in_queue);
-
-    self.timer.reset();
 
     self.vertex_upload_buffer.clearRetainingCapacity();
     self.index_upload_buffer.clearRetainingCapacity();
     try self.chunks.get(idx).generateMesh(&self.vertex_upload_buffer, &self.index_upload_buffer);
-
-    std.log.info("chunk mesh generate {}", .{std.fmt.fmtDuration(self.timer.lap())});
 
     const vertices = self.vertex_upload_buffer.items;
     const indices = self.index_upload_buffer.items;
@@ -131,8 +147,6 @@ pub fn uploadChunk(self: *@This(), device: vk.Device, pos: math.Vec3i, cmd: vk.C
         @memcpy(ptr[0..vertex_size], std.mem.sliceAsBytes(vertices));
         @memcpy(ptr[vertex_size .. vertex_size + index_size], std.mem.sliceAsBytes(indices));
     }
-
-    std.log.info("chunk mesh copy {}", .{std.fmt.fmtDuration(self.timer.lap())});
 
     const vertex_copy = vk.BufferCopy{ .size = vertex_size, .src_offset = 0, .dst_offset = 0 };
     vkd().cmdCopyBuffer(cmd, staging_buffer.handle, self.vertex_buffers[idx], 1, @ptrCast(&vertex_copy));
