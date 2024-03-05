@@ -115,6 +115,8 @@ frame_number: u64 = 0,
 fps: f32 = 0,
 timer: std.time.Timer,
 
+swapchain_resize_requested: bool = false,
+
 pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     const instance = try vkk.Instance.create(c.glfwGetInstanceProcAddress, .{
         .app_name = "ft_vox",
@@ -157,15 +159,7 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     try swapchain.getImageViews(images, image_views);
     errdefer vk_utils.destroyImageViews(device.handle, image_views);
 
-    const depth_image = try vk_utils.createImage(
-        device.handle,
-        physical_device.handle,
-        .d32_sfloat,
-        .{ .depth_stencil_attachment_bit = true },
-        .{ .width = swapchain.extent.width, .height = swapchain.extent.height, .depth = 1 },
-        .{ .device_local_bit = true },
-        .{ .depth_bit = true },
-    );
+    const depth_image = try createDepthImage(device.handle, physical_device.handle, .d32_sfloat, swapchain.extent);
     errdefer vk_utils.destroyImage(device.handle, depth_image);
 
     var deletion_queue = try vk_utils.DeletionQueue.init(allocator, 32);
@@ -374,6 +368,12 @@ pub fn run(self: *@This()) !void {
 
     while (!self.window.shouldClose()) {
         c.glfwPollEvents();
+
+        if (self.window.framebuffer_resized or self.swapchain_resize_requested) {
+            try self.recreateSwapchain();
+            self.window.framebuffer_resized = false;
+            self.swapchain_resize_requested = false;
+        }
         self.window.update();
 
         const delta_ns = timer.lap();
@@ -465,13 +465,20 @@ fn draw(self: *@This()) !void {
 
     try vkd().resetFences(device, 1, @ptrCast(&frame.render_fence));
 
-    const next_image_result = try vkd().acquireNextImageKHR(
+    const next_image_result = vkd().acquireNextImageKHR(
         device,
         self.swapchain.handle,
         std.time.ns_per_s,
         frame.swapchain_semaphore,
         .null_handle,
-    );
+    ) catch |err| {
+        if (err == error.OutOfDateKHR) {
+            self.swapchain_resize_requested = true;
+            return;
+        } else {
+            return err;
+        }
+    };
     assert(next_image_result.result == .success);
 
     const image_index = next_image_result.image_index;
@@ -569,7 +576,16 @@ fn draw(self: *@This()) !void {
         .p_wait_semaphores = @ptrCast(&frame.render_semaphore),
         .p_image_indices = @ptrCast(&image_index),
     };
-    const present_result = try vkd().queuePresentKHR(self.device.graphics_queue, &present_info);
+    const present_result = vkd().queuePresentKHR(self.device.graphics_queue, &present_info) catch |err| {
+        if (err == error.OutOfDateKHR) {
+            self.swapchain_resize_requested = true;
+            assert(self.frame_number != std.math.maxInt(u64));
+            self.frame_number += 1;
+            return;
+        } else {
+            return err;
+        }
+    };
     assert(present_result == .success);
 
     assert(self.frame_number != std.math.maxInt(u64));
@@ -591,6 +607,44 @@ fn renderImGuiFrame(self: *@This()) void {
     }
 
     c.ImGui_Render();
+}
+
+fn recreateSwapchain(self: *@This()) !void {
+    try vkd().deviceWaitIdle(self.device.handle);
+
+    vk_utils.destroyImageViews(self.device.handle, self.swapchain_image_views);
+    vk_utils.destroyImage(self.device.handle, self.depth_image);
+    vk_utils.destroyFrameBuffers(self.device.handle, self.framebuffers);
+
+    const old_swapchain = self.swapchain;
+    self.swapchain = try vkk.Swapchain.create(&self.device, self.surface, .{
+        .desired_extent = self.window.extent(),
+        .desired_formats = &.{
+            .{ .format = .b8g8r8a8_unorm, .color_space = .srgb_nonlinear_khr },
+        },
+        .desired_present_modes = &.{
+            .fifo_khr,
+        },
+        .old_swapchain = old_swapchain.handle,
+    });
+    old_swapchain.destroy();
+
+    try self.swapchain.getImages(self.swapchain_images);
+    try self.swapchain.getImageViews(self.swapchain_images, self.swapchain_image_views);
+    self.depth_image = try createDepthImage(self.device.handle, self.physical_device.handle, self.depth_image.format, self.swapchain.extent);
+    try vk_utils.createFramebuffers(self.device.handle, self.render_pass, self.swapchain.extent, self.swapchain_image_views, self.depth_image.view, self.framebuffers);
+}
+
+fn createDepthImage(device: vk.Device, physical_device: vk.PhysicalDevice, format: vk.Format, extent: vk.Extent2D) !AllocatedImage {
+    return vk_utils.createImage(
+        device,
+        physical_device,
+        format,
+        .{ .depth_stencil_attachment_bit = true },
+        .{ .width = extent.width, .height = extent.height, .depth = 1 },
+        .{ .device_local_bit = true },
+        .{ .depth_bit = true },
+    );
 }
 
 fn uploadMesh(
