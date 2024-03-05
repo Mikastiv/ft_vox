@@ -71,51 +71,36 @@ pub fn getBlockSides(self: *const @This(), x: usize, y: usize, z: usize) mesh.Cu
     assert(y < height);
     assert(z < depth);
 
+    const pos: math.Vec3i = .{ @intCast(x), @intCast(y), @intCast(z) };
+    const bits: [6]mesh.CubeSides = .{
+        mesh.CubeSides.front_side,
+        mesh.CubeSides.back_side,
+        mesh.CubeSides.north_side,
+        mesh.CubeSides.south_side,
+        mesh.CubeSides.east_side,
+        mesh.CubeSides.west_side,
+    };
+    const directions: [6]math.Vec3i = .{
+        .{ 0, 0, 1 },
+        .{ 0, 0, -1 },
+        .{ 0, 1, 0 },
+        .{ 0, -1, 0 },
+        .{ 1, 0, 0 },
+        .{ -1, 0, 0 },
+    };
+
     var sides: mesh.CubeSides = .{};
-
-    if (z < depth - 1) {
-        const front_cube = xyzTo1d(x, y, z + 1);
-        if (self.blocks[front_cube] == .air)
-            sides = sides.merge(.{ .front = true });
-    } else {
-        sides = sides.merge(.{ .front = true });
-    }
-    if (z > 0) {
-        const back_cube = xyzTo1d(x, y, z - 1);
-        if (self.blocks[back_cube] == .air)
-            sides = sides.merge(.{ .back = true });
-    } else {
-        sides = sides.merge(.{ .back = true });
-    }
-
-    if (y < height - 1) {
-        const top_cube = xyzTo1d(x, y + 1, z);
-        if (self.blocks[top_cube] == .air)
-            sides = sides.merge(.{ .north = true });
-    } else {
-        sides = sides.merge(.{ .north = true });
-    }
-    if (y > 0) {
-        const bottom_cube = xyzTo1d(x, y - 1, z);
-        if (self.blocks[bottom_cube] == .air)
-            sides = sides.merge(.{ .south = true });
-    } else {
-        sides = sides.merge(.{ .south = true });
-    }
-
-    if (x < width - 1) {
-        const east_cube = xyzTo1d(x + 1, y, z);
-        if (self.blocks[east_cube] == .air)
-            sides = sides.merge(.{ .east = true });
-    } else {
-        sides = sides.merge(.{ .east = true });
-    }
-    if (x > 0) {
-        const west_cube = xyzTo1d(x - 1, y, z);
-        if (self.blocks[west_cube] == .air)
-            sides = sides.merge(.{ .west = true });
-    } else {
-        sides = sides.merge(.{ .west = true });
+    for (0..6) |i| {
+        const bit = bits[i];
+        const direction = directions[i];
+        const neighbor = math.vec.add(pos, direction);
+        if (inBounds(neighbor)) {
+            const idx = xyzTo1d(@intCast(neighbor[0]), @intCast(neighbor[1]), @intCast(neighbor[2]));
+            if (self.blocks[idx] == .air)
+                sides = sides.merge(bit);
+        } else {
+            sides = sides.merge(bit);
+        }
     }
 
     return sides;
@@ -131,4 +116,10 @@ pub fn setBlock(self: *@This(), x: usize, y: usize, z: usize, block: Block.Id) v
 
 fn xyzTo1d(x: usize, y: usize, z: usize) usize {
     return z * width * height + y * width + x;
+}
+
+fn inBounds(pos: math.Vec3i) bool {
+    return pos[0] >= 0 and pos[0] < width and
+        pos[1] >= 0 and pos[1] < height and
+        pos[2] >= 0 and pos[2] < depth;
 }
