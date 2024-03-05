@@ -22,7 +22,7 @@ pub fn main() !void {
     var fba = std.heap.FixedBufferAllocator.init(memory);
     const allocator = fba.allocator();
 
-    const window = try Window.init(allocator, 1700, 900, "ft_vox");
+    const window = try Window.init(allocator, 1920, 1080, "ft_vox");
 
     var engine = try Engine.init(allocator, window);
     defer engine.deinit();

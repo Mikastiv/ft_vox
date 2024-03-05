@@ -14,7 +14,7 @@ pub const max_loaded_chunk = 128;
 
 pub const ChunkState = enum {
     empty,
-    in_use,
+    loaded,
     in_queue,
 };
 
@@ -154,7 +154,7 @@ fn uploadChunk(self: *@This(), device: vk.Device, pos: math.Vec3i, cmd: vk.Comma
     const index_copy = vk.BufferCopy{ .size = index_size, .src_offset = vertex_size, .dst_offset = 0 };
     vkd().cmdCopyBuffer(cmd, staging_buffer.handle, self.index_buffers[idx], 1, @ptrCast(&index_copy));
 
-    self.states[idx] = .in_use;
+    self.states[idx] = .loaded;
     self.index_counts[idx] = @intCast(indices.len);
 }
 

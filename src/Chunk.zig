@@ -25,9 +25,9 @@ pos: math.Vec3i = .{ 0, 0, 0 },
 pub fn default(self: *@This()) void {
     self.blocks = std.mem.zeroes(@TypeOf(self.blocks));
 
-    for (0..16) |z| {
+    for (0..depth) |z| {
         for (0..2) |y| {
-            for (0..16) |x| {
+            for (0..width) |x| {
                 self.setBlock(x, y, z, .grass);
             }
         }
