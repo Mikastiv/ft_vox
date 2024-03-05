@@ -25,6 +25,7 @@ pub const staging_buffer_size = 1024 * 1024 * 100;
 
 const mouse_sensivity = 15.0;
 const move_speed = 8.0;
+const chunk_radius = 16;
 
 const ns_per_tick: comptime_int = @intFromFloat(std.time.ns_per_ms * 16.6);
 const delta_time_fixed = @as(comptime_float, ns_per_tick) / @as(comptime_float, std.time.ns_per_s);
@@ -274,11 +275,11 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     chunk.default();
 
     const cmd = try beginImmediateSubmit(immediate_context);
-    for (0..8) |j| {
-        for (0..8) |i| {
+    for (0..chunk_radius) |j| {
+        for (0..chunk_radius) |i| {
             const x: i32 = @intCast(i);
             const z: i32 = @intCast(j);
-            chunk.pos = .{ @intCast(x - 4), 0, @intCast(z - 4) };
+            chunk.pos = .{ @intCast(x - chunk_radius / 2), 0, @intCast(z - chunk_radius / 2) };
             try world.addChunk(chunk);
             _ = try world.uploadChunkFromQueue(device.handle, cmd, staging_buffer);
         }
@@ -424,8 +425,8 @@ fn fixedUpdate(self: *@This()) !void {
         current_chunk[1] != prev_chunk[1] or
         current_chunk[2] != prev_chunk[2])
     {
-        const min = .{ current_chunk[0] - 4, 0, current_chunk[2] - 4 };
-        const max = .{ current_chunk[0] + 4, 0, current_chunk[2] + 4 };
+        const min = .{ current_chunk[0] - chunk_radius / 2, 0, current_chunk[2] - chunk_radius / 2 };
+        const max = .{ current_chunk[0] + chunk_radius / 2, 0, current_chunk[2] + chunk_radius / 2 };
 
         for (self.world.chunks.items(.pos)) |pos| {
             if (pos[0] < min[0] or pos[0] > max[0] or
@@ -437,11 +438,11 @@ fn fixedUpdate(self: *@This()) !void {
         }
 
         self.chunk_temp.default();
-        for (0..8) |j| {
-            for (0..8) |i| {
+        for (0..chunk_radius) |j| {
+            for (0..chunk_radius) |i| {
                 const x: i32 = @intCast(i);
                 const z: i32 = @intCast(j);
-                self.chunk_temp.pos = .{ current_chunk[0] + x - 4, 0, current_chunk[2] + z - 4 };
+                self.chunk_temp.pos = .{ current_chunk[0] + x - chunk_radius / 2, 0, current_chunk[2] + z - chunk_radius / 2 };
                 try self.world.addChunk(self.chunk_temp);
             }
         }

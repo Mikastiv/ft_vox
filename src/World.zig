@@ -10,7 +10,7 @@ const math = @import("math.zig");
 const assert = std.debug.assert;
 const vkd = vkk.dispatch.vkd;
 
-pub const max_loaded_chunk = 128;
+pub const max_loaded_chunk = 16 * 16 + 16 * 4;
 
 pub const ChunkState = enum {
     empty,
@@ -18,7 +18,7 @@ pub const ChunkState = enum {
     in_queue,
 };
 
-const ChunkUploadQueue = std.BoundedArray(math.Vec3i, 128);
+const ChunkUploadQueue = std.BoundedArray(math.Vec3i, 256);
 
 chunk_mapping: std.AutoHashMap(math.Vec3i, usize),
 chunks: std.MultiArrayList(Chunk),
