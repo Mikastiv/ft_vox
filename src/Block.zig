@@ -1,9 +1,24 @@
 const std = @import("std");
+const math = @import("math.zig");
 
 const assert = std.debug.assert;
 
+const tile_width = 16.0;
+const tile_height = 16.0;
+const tex_width = 256.0;
+const tex_height = 256.0;
+
+const Face = enum {
+    front,
+    back,
+    north,
+    south,
+    east,
+    west,
+};
+
 pub const Id = enum(u8) {
-    air,
+    air = 0,
     stone,
     cobblestone,
     dirt,
@@ -18,129 +33,136 @@ pub const Id = enum(u8) {
     gold_ore,
     diamond_ore,
     emerald_ore,
+
+    fn tileCoords(comptime self: @This(), comptime face: Face) [2]u16 {
+        return switch (self) {
+            .air => .{ 0, 0 },
+            .stone => .{ 6, 0 },
+            .cobblestone => .{ 7, 0 },
+            .dirt => .{ 2, 0 },
+            .grass => switch (face) {
+                .front, .back, .east, .west => .{ 1, 0 },
+                .north => .{ 0, 0 },
+                .south => .{ 1, 0 },
+            },
+            .plank => .{ 3, 0 },
+            .log => switch (face) {
+                .front, .back, .east, .west => .{ 4, 0 },
+                .north, .south => .{ 5, 0 },
+            },
+            .gravel => .{ 13, 0 },
+            .sand => .{ 12, 0 },
+            .tnt => switch (face) {
+                .front, .back, .east, .west => .{ 9, 0 },
+                .north => .{ 10, 0 },
+                .south => .{ 11, 0 },
+            },
+            .coal_ore => .{ 14, 0 },
+            .iron_ore => .{ 15, 0 },
+            .gold_ore => .{ 2, 1 },
+            .diamond_ore => .{ 1, 1 },
+            .emerald_ore => .{ 0, 1 },
+        };
+    }
 };
 
-front: [2]u16,
-back: [2]u16,
-north: [2]u16,
-south: [2]u16,
-east: [2]u16,
-west: [2]u16,
+front: [4]math.Vec2,
+back: [4]math.Vec2,
+north: [4]math.Vec2,
+south: [4]math.Vec2,
+east: [4]math.Vec2,
+west: [4]math.Vec2,
 
 pub fn fromId(id: Id) @This() {
-    return switch (id) {
-        .air => @panic("no texture for air"),
-        .stone => .{
-            .front = .{ 6, 0 },
-            .back = .{ 6, 0 },
-            .north = .{ 6, 0 },
-            .south = .{ 6, 0 },
-            .east = .{ 6, 0 },
-            .west = .{ 6, 0 },
-        },
-        .cobblestone => .{
-            .front = .{ 7, 0 },
-            .back = .{ 7, 0 },
-            .north = .{ 7, 0 },
-            .south = .{ 7, 0 },
-            .east = .{ 7, 0 },
-            .west = .{ 7, 0 },
-        },
-        .dirt => .{
-            .front = .{ 2, 0 },
-            .back = .{ 2, 0 },
-            .north = .{ 2, 0 },
-            .south = .{ 2, 0 },
-            .east = .{ 2, 0 },
-            .west = .{ 2, 0 },
-        },
-        .grass => .{
-            .front = .{ 1, 0 },
-            .back = .{ 1, 0 },
-            .north = .{ 0, 0 },
-            .south = .{ 2, 0 },
-            .east = .{ 1, 0 },
-            .west = .{ 1, 0 },
-        },
-        .plank => .{
-            .front = .{ 3, 0 },
-            .back = .{ 3, 0 },
-            .north = .{ 3, 0 },
-            .south = .{ 3, 0 },
-            .east = .{ 3, 0 },
-            .west = .{ 3, 0 },
-        },
-        .log => .{
-            .front = .{ 4, 0 },
-            .back = .{ 4, 0 },
-            .north = .{ 5, 0 },
-            .south = .{ 5, 0 },
-            .east = .{ 4, 0 },
-            .west = .{ 4, 0 },
-        },
-        .gravel => .{
-            .front = .{ 13, 0 },
-            .back = .{ 13, 0 },
-            .north = .{ 13, 0 },
-            .south = .{ 13, 0 },
-            .east = .{ 13, 0 },
-            .west = .{ 13, 0 },
-        },
-        .sand => .{
-            .front = .{ 12, 0 },
-            .back = .{ 12, 0 },
-            .north = .{ 12, 0 },
-            .south = .{ 12, 0 },
-            .east = .{ 12, 0 },
-            .west = .{ 12, 0 },
-        },
-        .tnt => .{
-            .front = .{ 9, 0 },
-            .back = .{ 9, 0 },
-            .north = .{ 10, 0 },
-            .south = .{ 11, 0 },
-            .east = .{ 9, 0 },
-            .west = .{ 9, 0 },
-        },
-        .coal_ore => .{
-            .front = .{ 14, 0 },
-            .back = .{ 14, 0 },
-            .north = .{ 14, 0 },
-            .south = .{ 14, 0 },
-            .east = .{ 14, 0 },
-            .west = .{ 14, 0 },
-        },
-        .iron_ore => .{
-            .front = .{ 15, 0 },
-            .back = .{ 15, 0 },
-            .north = .{ 15, 0 },
-            .south = .{ 15, 0 },
-            .east = .{ 15, 0 },
-            .west = .{ 15, 0 },
-        },
-        .gold_ore => .{
-            .front = .{ 2, 1 },
-            .back = .{ 2, 1 },
-            .north = .{ 2, 1 },
-            .south = .{ 2, 1 },
-            .east = .{ 2, 1 },
-            .west = .{ 2, 1 },
-        },
-        .diamond_ore => .{
-            .front = .{ 1, 1 },
-            .back = .{ 1, 1 },
-            .north = .{ 1, 1 },
-            .south = .{ 1, 1 },
-            .east = .{ 1, 1 },
-            .west = .{ 1, 1 },
-        },
-        .emerald_ore => .{
-            .front = .{ 0, 1 },
-            .back = .{ 0, 1 },
-            .north = .{ 0, 1 },
-            .south = .{ 0, 1 },
-            .east = .{ 0, 1 },
-            .west = .{ 0, 1 },
-        },
+    return face_uvs[@intFromEnum(id)];
+}
+
+const face_uvs: [@typeInfo(Id).Enum.fields.len]@This() = blk: {
+    var array: [@typeInfo(Id).Enum.fields.len]@This() = undefined;
+
+    for (std.enums.values(Id)) |id| {
+        const coords_front = id.tileCoords(.front);
+        const coords_back = id.tileCoords(.back);
+        const coords_east = id.tileCoords(.east);
+        const coords_west = id.tileCoords(.west);
+        const coords_north = id.tileCoords(.north);
+        const coords_south = id.tileCoords(.south);
+
+        array[@intFromEnum(id)] = .{
+            .front = .{
+                uvTopLeft(coords_front[0], coords_front[1]),
+                uvBottomLeft(coords_front[0], coords_front[1]),
+                uvBottomRight(coords_front[0], coords_front[1]),
+                uvTopRight(coords_front[0], coords_front[1]),
+            },
+            .back = .{
+                uvTopLeft(coords_back[0], coords_back[1]),
+                uvBottomLeft(coords_back[0], coords_back[1]),
+                uvBottomRight(coords_back[0], coords_back[1]),
+                uvTopRight(coords_back[0], coords_back[1]),
+            },
+            .east = .{
+                uvTopLeft(coords_east[0], coords_east[1]),
+                uvBottomLeft(coords_east[0], coords_east[1]),
+                uvBottomRight(coords_east[0], coords_east[1]),
+                uvTopRight(coords_east[0], coords_east[1]),
+            },
+            .west = .{
+                uvTopLeft(coords_west[0], coords_west[1]),
+                uvBottomLeft(coords_west[0], coords_west[1]),
+                uvBottomRight(coords_west[0], coords_west[1]),
+                uvTopRight(coords_west[0], coords_west[1]),
+            },
+            .north = .{
+                uvTopLeft(coords_north[0], coords_north[1]),
+                uvBottomLeft(coords_north[0], coords_north[1]),
+                uvBottomRight(coords_north[0], coords_north[1]),
+                uvTopRight(coords_north[0], coords_north[1]),
+            },
+            .south = .{
+                uvTopLeft(coords_south[0], coords_south[1]),
+                uvBottomLeft(coords_south[0], coords_south[1]),
+                uvBottomRight(coords_south[0], coords_south[1]),
+                uvTopRight(coords_south[0], coords_south[1]),
+            },
+        };
+    }
+
+    break :blk array;
+};
+
+fn uvTopLeft(row: u16, col: u16) math.Vec2 {
+    const col_f: f32 = @floatFromInt(col);
+    const row_f: f32 = @floatFromInt(row);
+    return .{
+        (col_f + 0.0) * tile_width / tex_width,
+        (row_f + 0.0) * tile_height / tex_height,
+    };
+}
+
+fn uvTopRight(row: u16, col: u16) math.Vec2 {
+    const col_f: f32 = @floatFromInt(col);
+    const row_f: f32 = @floatFromInt(row);
+    return .{
+        (col_f + 1.0) * tile_width / tex_width,
+        (row_f + 0.0) * tile_height / tex_height,
+    };
+}
+
+fn uvBottomLeft(row: u16, col: u16) math.Vec2 {
+    const col_f: f32 = @floatFromInt(col);
+    const row_f: f32 = @floatFromInt(row);
+    return .{
+        col_f * tile_width / tex_width,
+        (row_f + 1.0) * tile_height / tex_height,
+    };
+}
+
+fn uvBottomRight(row: u16, col: u16) math.Vec2 {
+    const col_f: f32 = @floatFromInt(col);
+    const row_f: f32 = @floatFromInt(row);
+    return .{
+        (col_f + 1.0) * tile_width / tex_width,
+        (row_f + 1.0) * tile_height / tex_height,
     };
 }

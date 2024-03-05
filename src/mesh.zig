@@ -54,11 +54,6 @@ pub const Cube = struct {
 pub const max_vertices_per_block = 24;
 pub const max_indices_per_block = 36;
 
-const tile_width = 16.0;
-const tile_height = 16.0;
-const tex_width = 256.0;
-const tex_height = 256.0;
-
 pub fn generateCube(
     sides: CubeSides,
     block_id: Block.Id,
@@ -74,75 +69,57 @@ pub fn generateCube(
     const block = Block.fromId(block_id);
 
     if (sides.contains(CubeSides.front_side)) {
-        const col = block.front[0];
-        const row = block.front[1];
-
         appendIndices(@intCast(out_vertices.items.len), out_indices);
         out_vertices.appendSliceAssumeCapacity(&.{
-            .{ .pos = math.vec.add(pos, .{ 0, 1, 1 }), .uv = uvTopLeft(col, row) },
-            .{ .pos = math.vec.add(pos, .{ 0, 0, 1 }), .uv = uvBottomLeft(col, row) },
-            .{ .pos = math.vec.add(pos, .{ 1, 0, 1 }), .uv = uvBottomRight(col, row) },
-            .{ .pos = math.vec.add(pos, .{ 1, 1, 1 }), .uv = uvTopRight(col, row) },
+            .{ .pos = math.vec.add(pos, .{ 0, 1, 1 }), .uv = block.front[0] },
+            .{ .pos = math.vec.add(pos, .{ 0, 0, 1 }), .uv = block.front[1] },
+            .{ .pos = math.vec.add(pos, .{ 1, 0, 1 }), .uv = block.front[2] },
+            .{ .pos = math.vec.add(pos, .{ 1, 1, 1 }), .uv = block.front[3] },
         });
     }
     if (sides.contains(CubeSides.back_side)) {
-        const col = block.back[0];
-        const row = block.back[1];
-
         appendIndices(@intCast(out_vertices.items.len), out_indices);
         out_vertices.appendSliceAssumeCapacity(&.{
-            .{ .pos = math.vec.add(pos, .{ 1, 1, 0 }), .uv = uvTopLeft(col, row) },
-            .{ .pos = math.vec.add(pos, .{ 1, 0, 0 }), .uv = uvBottomLeft(col, row) },
-            .{ .pos = math.vec.add(pos, .{ 0, 0, 0 }), .uv = uvBottomRight(col, row) },
-            .{ .pos = math.vec.add(pos, .{ 0, 1, 0 }), .uv = uvTopRight(col, row) },
+            .{ .pos = math.vec.add(pos, .{ 1, 1, 0 }), .uv = block.back[0] },
+            .{ .pos = math.vec.add(pos, .{ 1, 0, 0 }), .uv = block.back[1] },
+            .{ .pos = math.vec.add(pos, .{ 0, 0, 0 }), .uv = block.back[2] },
+            .{ .pos = math.vec.add(pos, .{ 0, 1, 0 }), .uv = block.back[3] },
         });
     }
     if (sides.contains(CubeSides.west_side)) {
-        const col = block.west[0];
-        const row = block.west[1];
-
         appendIndices(@intCast(out_vertices.items.len), out_indices);
         out_vertices.appendSliceAssumeCapacity(&.{
-            .{ .pos = math.vec.add(pos, .{ 0, 1, 0 }), .uv = uvTopLeft(col, row) },
-            .{ .pos = math.vec.add(pos, .{ 0, 0, 0 }), .uv = uvBottomLeft(col, row) },
-            .{ .pos = math.vec.add(pos, .{ 0, 0, 1 }), .uv = uvBottomRight(col, row) },
-            .{ .pos = math.vec.add(pos, .{ 0, 1, 1 }), .uv = uvTopRight(col, row) },
+            .{ .pos = math.vec.add(pos, .{ 0, 1, 0 }), .uv = block.west[0] },
+            .{ .pos = math.vec.add(pos, .{ 0, 0, 0 }), .uv = block.west[1] },
+            .{ .pos = math.vec.add(pos, .{ 0, 0, 1 }), .uv = block.west[2] },
+            .{ .pos = math.vec.add(pos, .{ 0, 1, 1 }), .uv = block.west[3] },
         });
     }
     if (sides.contains(CubeSides.east_side)) {
-        const col = block.east[0];
-        const row = block.east[1];
-
         appendIndices(@intCast(out_vertices.items.len), out_indices);
         out_vertices.appendSliceAssumeCapacity(&.{
-            .{ .pos = math.vec.add(pos, .{ 1, 1, 1 }), .uv = uvTopLeft(col, row) },
-            .{ .pos = math.vec.add(pos, .{ 1, 0, 1 }), .uv = uvBottomLeft(col, row) },
-            .{ .pos = math.vec.add(pos, .{ 1, 0, 0 }), .uv = uvBottomRight(col, row) },
-            .{ .pos = math.vec.add(pos, .{ 1, 1, 0 }), .uv = uvTopRight(col, row) },
+            .{ .pos = math.vec.add(pos, .{ 1, 1, 1 }), .uv = block.east[0] },
+            .{ .pos = math.vec.add(pos, .{ 1, 0, 1 }), .uv = block.east[1] },
+            .{ .pos = math.vec.add(pos, .{ 1, 0, 0 }), .uv = block.east[2] },
+            .{ .pos = math.vec.add(pos, .{ 1, 1, 0 }), .uv = block.east[3] },
         });
     }
     if (sides.contains(CubeSides.south_side)) {
-        const col = block.south[0];
-        const row = block.south[1];
-
         appendIndices(@intCast(out_vertices.items.len), out_indices);
         out_vertices.appendSliceAssumeCapacity(&.{
-            .{ .pos = math.vec.add(pos, .{ 0, 0, 1 }), .uv = uvTopLeft(col, row) },
-            .{ .pos = math.vec.add(pos, .{ 0, 0, 0 }), .uv = uvBottomLeft(col, row) },
-            .{ .pos = math.vec.add(pos, .{ 1, 0, 0 }), .uv = uvBottomRight(col, row) },
-            .{ .pos = math.vec.add(pos, .{ 1, 0, 1 }), .uv = uvTopRight(col, row) },
+            .{ .pos = math.vec.add(pos, .{ 0, 0, 1 }), .uv = block.south[0] },
+            .{ .pos = math.vec.add(pos, .{ 0, 0, 0 }), .uv = block.south[1] },
+            .{ .pos = math.vec.add(pos, .{ 1, 0, 0 }), .uv = block.south[2] },
+            .{ .pos = math.vec.add(pos, .{ 1, 0, 1 }), .uv = block.south[3] },
         });
     }
     if (sides.contains(CubeSides.north_side)) {
-        const col = block.north[0];
-        const row = block.north[1];
-
         appendIndices(@intCast(out_vertices.items.len), out_indices);
         out_vertices.appendSliceAssumeCapacity(&.{
-            .{ .pos = math.vec.add(pos, .{ 0, 1, 0 }), .uv = uvTopLeft(col, row) },
-            .{ .pos = math.vec.add(pos, .{ 0, 1, 1 }), .uv = uvBottomLeft(col, row) },
-            .{ .pos = math.vec.add(pos, .{ 1, 1, 1 }), .uv = uvBottomRight(col, row) },
-            .{ .pos = math.vec.add(pos, .{ 1, 1, 0 }), .uv = uvTopRight(col, row) },
+            .{ .pos = math.vec.add(pos, .{ 0, 1, 0 }), .uv = block.north[0] },
+            .{ .pos = math.vec.add(pos, .{ 0, 1, 1 }), .uv = block.north[1] },
+            .{ .pos = math.vec.add(pos, .{ 1, 1, 1 }), .uv = block.north[2] },
+            .{ .pos = math.vec.add(pos, .{ 1, 1, 0 }), .uv = block.north[3] },
         });
     }
 }
@@ -156,40 +133,4 @@ fn appendIndices(initial_vertex: u16, out_indices: *std.ArrayList(u16)) void {
         initial_vertex + 2,
         initial_vertex + 3,
     });
-}
-
-fn uvTopLeft(col: u16, row: u16) math.Vec2 {
-    const col_f: f32 = @floatFromInt(col);
-    const row_f: f32 = @floatFromInt(row);
-    return .{
-        (col_f + 0.0) * tile_width / tex_width,
-        (row_f + 0.0) * tile_height / tex_height,
-    };
-}
-
-fn uvTopRight(col: u16, row: u16) math.Vec2 {
-    const col_f: f32 = @floatFromInt(col);
-    const row_f: f32 = @floatFromInt(row);
-    return .{
-        (col_f + 1.0) * tile_width / tex_width,
-        (row_f + 0.0) * tile_height / tex_height,
-    };
-}
-
-fn uvBottomLeft(col: u16, row: u16) math.Vec2 {
-    const col_f: f32 = @floatFromInt(col);
-    const row_f: f32 = @floatFromInt(row);
-    return .{
-        col_f * tile_width / tex_width,
-        (row_f + 1.0) * tile_height / tex_height,
-    };
-}
-
-fn uvBottomRight(col: u16, row: u16) math.Vec2 {
-    const col_f: f32 = @floatFromInt(col);
-    const row_f: f32 = @floatFromInt(row);
-    return .{
-        (col_f + 1.0) * tile_width / tex_width,
-        (row_f + 1.0) * tile_height / tex_height,
-    };
 }

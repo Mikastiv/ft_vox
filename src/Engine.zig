@@ -531,7 +531,7 @@ fn draw(self: *@This()) !void {
     vkd().cmdSetScissor(cmd, 0, 1, @ptrCast(&scissor));
 
     for (self.world.chunks.items(.pos), 0..) |pos, idx| {
-        if (self.world.states[idx] != .in_use) continue;
+        if (self.world.states[idx] != .loaded) continue;
 
         vkd().cmdBindVertexBuffers(cmd, 0, 1, @ptrCast(&self.world.vertex_buffers[idx]), &[_]vk.DeviceSize{0});
         vkd().cmdBindIndexBuffer(cmd, self.world.index_buffers[idx], 0, .uint16);
