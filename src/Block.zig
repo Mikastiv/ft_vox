@@ -43,7 +43,7 @@ pub const Id = enum(u8) {
             .grass => switch (face) {
                 .front, .back, .east, .west => .{ 1, 0 },
                 .north => .{ 0, 0 },
-                .south => .{ 1, 0 },
+                .south => .{ 2, 0 },
             },
             .plank => .{ 3, 0 },
             .log => switch (face) {
@@ -131,38 +131,38 @@ const face_uvs: [@typeInfo(Id).Enum.fields.len]@This() = blk: {
     break :blk array;
 };
 
-fn uvTopLeft(row: u16, col: u16) math.Vec2 {
-    const col_f: f32 = @floatFromInt(col);
-    const row_f: f32 = @floatFromInt(row);
+fn uvTopLeft(x: u16, y: u16) math.Vec2 {
+    const col: f32 = @floatFromInt(x);
+    const row: f32 = @floatFromInt(y);
     return .{
-        (col_f + 0.0) * tile_width / tex_width,
-        (row_f + 0.0) * tile_height / tex_height,
+        (col + 0.0) * tile_width / tex_width,
+        (row + 0.0) * tile_height / tex_height,
     };
 }
 
-fn uvTopRight(row: u16, col: u16) math.Vec2 {
-    const col_f: f32 = @floatFromInt(col);
-    const row_f: f32 = @floatFromInt(row);
+fn uvTopRight(x: u16, y: u16) math.Vec2 {
+    const col: f32 = @floatFromInt(x);
+    const row: f32 = @floatFromInt(y);
     return .{
-        (col_f + 1.0) * tile_width / tex_width,
-        (row_f + 0.0) * tile_height / tex_height,
+        (col + 1.0) * tile_width / tex_width,
+        (row + 0.0) * tile_height / tex_height,
     };
 }
 
-fn uvBottomLeft(row: u16, col: u16) math.Vec2 {
-    const col_f: f32 = @floatFromInt(col);
-    const row_f: f32 = @floatFromInt(row);
+fn uvBottomLeft(x: u16, y: u16) math.Vec2 {
+    const col: f32 = @floatFromInt(x);
+    const row: f32 = @floatFromInt(y);
     return .{
-        col_f * tile_width / tex_width,
-        (row_f + 1.0) * tile_height / tex_height,
+        col * tile_width / tex_width,
+        (row + 1.0) * tile_height / tex_height,
     };
 }
 
-fn uvBottomRight(row: u16, col: u16) math.Vec2 {
-    const col_f: f32 = @floatFromInt(col);
-    const row_f: f32 = @floatFromInt(row);
+fn uvBottomRight(x: u16, y: u16) math.Vec2 {
+    const col: f32 = @floatFromInt(x);
+    const row: f32 = @floatFromInt(y);
     return .{
-        (col_f + 1.0) * tile_width / tex_width,
-        (row_f + 1.0) * tile_height / tex_height,
+        (col + 1.0) * tile_width / tex_width,
+        (row + 1.0) * tile_height / tex_height,
     };
 }
