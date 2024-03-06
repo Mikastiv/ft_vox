@@ -277,7 +277,6 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     const chunk = try allocator.create(Chunk);
     chunk.default();
 
-    const cmd = try beginImmediateSubmit(immediate_context);
     for (0..chunk_radius) |j| {
         for (0..chunk_radius) |i| {
             const x: i32 = @intCast(i);
@@ -286,11 +285,12 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
             try world.addChunk(chunk, pos);
         }
     }
-    while (world.upload_queue.len > 0) {
-        _ = try world.uploadChunkFromQueue(device.handle, cmd, staging_buffer);
-    }
 
-    try endImmediateSubmit(device.handle, device.graphics_queue, immediate_context, cmd);
+    // const cmd = try beginImmediateSubmit(immediate_context);
+    // while (world.upload_queue.len > 0) {
+    //     _ = try world.uploadChunkFromQueue(device.handle, cmd, staging_buffer);
+    // }
+    // try endImmediateSubmit(device.handle, device.graphics_queue, immediate_context, cmd);
 
     const min_alignment = physical_device.properties.limits.min_uniform_buffer_offset_alignment;
     assert(min_alignment > 0);

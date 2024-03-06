@@ -98,6 +98,15 @@ pub fn addChunk(self: *@This(), chunk: *const Chunk, pos: math.Vec3i) !void {
     self.positions[idx] = pos;
     try self.chunk_mapping.put(pos, idx);
     try self.upload_queue.append(pos);
+    outer: for (0..Chunk.directions.len) |i| {
+        const neighbor_idx = self.chunk_mapping.get(math.vec.add(pos, Chunk.directions[i])) orelse continue;
+        for (self.upload_queue.constSlice()) |p| {
+            if (math.vec.eql(p, self.positions[neighbor_idx])) {
+                continue :outer;
+            }
+        }
+        try self.upload_queue.append(self.positions[neighbor_idx]);
+    }
 }
 
 pub fn removeChunk(self: *@This(), pos: math.Vec3i) void {
@@ -123,12 +132,12 @@ pub fn uploadChunkFromQueue(self: *@This(), device: vk.Device, cmd: vk.CommandBu
 
 fn uploadChunk(self: *@This(), device: vk.Device, pos: math.Vec3i, cmd: vk.CommandBuffer, staging_buffer: Engine.AllocatedBuffer) !void {
     const idx = self.chunk_mapping.get(pos) orelse @panic("no chunk");
-    assert(self.states[idx] == .in_queue);
+    assert(self.states[idx] != .empty);
 
     self.vertex_upload_buffer.clearRetainingCapacity();
     self.index_upload_buffer.clearRetainingCapacity();
-    var neighbor_chunks: [6]?*const Chunk = undefined;
-    for (0..6) |i| {
+    var neighbor_chunks: [Chunk.directions.len]?*const Chunk = undefined;
+    for (0..Chunk.directions.len) |i| {
         const neighbor_idx = self.chunk_mapping.get(math.vec.add(pos, Chunk.directions[i]));
         if (neighbor_idx) |n_idx| {
             const ptr = &self.chunks[n_idx];
