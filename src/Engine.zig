@@ -286,11 +286,11 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
         }
     }
 
-    // const cmd = try beginImmediateSubmit(immediate_context);
-    // while (world.upload_queue.len > 0) {
-    //     _ = try world.uploadChunkFromQueue(device.handle, cmd, staging_buffer);
-    // }
-    // try endImmediateSubmit(device.handle, device.graphics_queue, immediate_context, cmd);
+    while (world.upload_queue.len > 0) {
+        const cmd = try beginImmediateSubmit(immediate_context);
+        _ = try world.uploadChunkFromQueue(device.handle, cmd, staging_buffer);
+        try endImmediateSubmit(device.handle, device.graphics_queue, immediate_context, cmd);
+    }
 
     const min_alignment = physical_device.properties.limits.min_uniform_buffer_offset_alignment;
     assert(min_alignment > 0);
