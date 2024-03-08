@@ -10,8 +10,8 @@ const math = @import("math.zig");
 const assert = std.debug.assert;
 const vkd = vkk.dispatch.vkd;
 
-pub const chunk_radius = 16;
-pub const max_loaded_chunk = chunk_radius * chunk_radius * chunk_radius;
+pub const chunk_radius = 8;
+pub const max_loaded_chunk = chunk_radius * chunk_radius * chunk_radius * chunk_radius;
 
 pub const ChunkState = enum {
     empty,

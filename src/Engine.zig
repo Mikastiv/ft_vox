@@ -276,24 +276,23 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     const chunk = try allocator.create(Chunk);
     chunk.default();
 
-    // for (0..World.chunk_radius) |j| {
-    for (0..World.chunk_radius * 2) |i| {
-        for (0..World.chunk_radius * 2) |k| {
-            const x: i32 = @intCast(i);
-            // const y: i32 = @intCast(j);
-            const z: i32 = @intCast(k);
-            const pos: math.Vec3i = .{
-                @intCast(x - World.chunk_radius),
-                // @intCast(y - World.chunk_radius / 2),
-                0,
-                @intCast(z - World.chunk_radius),
-            };
-            if (math.vec.length2(pos) < World.chunk_radius * World.chunk_radius) {
-                try world.addChunk(chunk, pos);
+    for (0..World.chunk_radius * 2) |j| {
+        for (0..World.chunk_radius * 2) |i| {
+            for (0..World.chunk_radius * 2) |k| {
+                const x: i32 = @intCast(i);
+                const y: i32 = @intCast(j);
+                const z: i32 = @intCast(k);
+                const pos: math.Vec3i = .{
+                    @intCast(x - World.chunk_radius),
+                    @intCast(y - World.chunk_radius),
+                    @intCast(z - World.chunk_radius),
+                };
+                if (math.vec.length2(pos) < World.chunk_radius * World.chunk_radius) {
+                    try world.addChunk(chunk, pos);
+                }
             }
         }
     }
-    // }
 
     while (world.upload_queue.len > 0) {
         const cmd = try beginImmediateSubmit(immediate_context);
@@ -447,36 +446,27 @@ fn fixedUpdate(self: *@This()) !void {
         current_chunk[1] != prev_chunk[1] or
         current_chunk[2] != prev_chunk[2])
     {
-        // const min = .{ current_chunk[0] - World.chunk_radius / 2, 0, current_chunk[2] - World.chunk_radius / 2 };
-        // const max = .{ current_chunk[0] + World.chunk_radius / 2, 0, current_chunk[2] + World.chunk_radius / 2 };
-
-        // var it = self.world.chunkIterator();
-        // while (it.next()) |chunk| {
-        //     if (chunk.position[0] < min[0] or chunk.position[0] > max[0] or
-        //         chunk.position[1] < min[1] or chunk.position[1] > max[1] or
-        //         chunk.position[2] < min[2] or chunk.position[2] > max[2])
-        //     {
-        //         self.world.removeChunk(chunk.position);
-        //     }
-        // }
-
         self.chunk_temp.default();
-        // for (0..World.chunk_radius) |j| {
-        for (0..World.chunk_radius * 2) |i| {
-            for (0..World.chunk_radius * 2) |k| {
-                const x: i32 = @intCast(i);
-                // const y: i32 = @intCast(j);
-                const z: i32 = @intCast(k);
-                const pos: math.Vec3i = .{ current_chunk[0] + x - World.chunk_radius, 0, current_chunk[2] + z - World.chunk_radius };
-                const dist = math.vec.length2(math.vec.sub(pos, current_chunk));
-                if (dist < World.chunk_radius * World.chunk_radius) {
-                    try self.world.addChunk(self.chunk_temp, pos);
-                } else {
-                    self.world.removeChunk(pos);
+        for (0..World.chunk_radius * 2) |j| {
+            for (0..World.chunk_radius * 2) |i| {
+                for (0..World.chunk_radius * 2) |k| {
+                    const x: i32 = @intCast(i);
+                    const y: i32 = @intCast(j);
+                    const z: i32 = @intCast(k);
+                    const pos: math.Vec3i = .{
+                        current_chunk[0] + x - World.chunk_radius,
+                        current_chunk[1] + y - World.chunk_radius,
+                        current_chunk[2] + z - World.chunk_radius,
+                    };
+                    const dist = math.vec.length2(math.vec.sub(pos, current_chunk));
+                    if (dist < World.chunk_radius * World.chunk_radius) {
+                        try self.world.addChunk(self.chunk_temp, pos);
+                    } else {
+                        self.world.removeChunk(pos);
+                    }
                 }
             }
         }
-        // }
     }
 }
 
@@ -571,7 +561,7 @@ fn draw(self: *@This()) !void {
 
     var chunk_it = self.world.chunkIterator();
     while (chunk_it.next()) |chunk| {
-        if (chunk.state != .loaded) continue;
+        if (chunk.state != .loaded or chunk.index_count == 0) continue;
 
         vkd().cmdBindVertexBuffers(cmd, 0, 1, @ptrCast(&chunk.vertex_buffer), &[_]vk.DeviceSize{0});
         vkd().cmdBindIndexBuffer(cmd, chunk.index_buffer, 0, .uint16);
