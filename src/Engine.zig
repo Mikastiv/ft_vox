@@ -25,7 +25,6 @@ pub const staging_buffer_size = 1024 * 1024 * 100;
 
 const mouse_sensivity = 15.0;
 const move_speed = 8.0;
-const chunk_radius = 16;
 
 const ns_per_tick: comptime_int = @intFromFloat(std.time.ns_per_ms * 16.6);
 const delta_time_fixed = @as(comptime_float, ns_per_tick) / @as(comptime_float, std.time.ns_per_s);
@@ -277,14 +276,24 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     const chunk = try allocator.create(Chunk);
     chunk.default();
 
-    for (0..chunk_radius) |j| {
-        for (0..chunk_radius) |i| {
+    // for (0..World.chunk_radius) |j| {
+    for (0..World.chunk_radius * 2) |i| {
+        for (0..World.chunk_radius * 2) |k| {
             const x: i32 = @intCast(i);
-            const z: i32 = @intCast(j);
-            const pos: math.Vec3i = .{ @intCast(x - chunk_radius / 2), 0, @intCast(z - chunk_radius / 2) };
-            try world.addChunk(chunk, pos);
+            // const y: i32 = @intCast(j);
+            const z: i32 = @intCast(k);
+            const pos: math.Vec3i = .{
+                @intCast(x - World.chunk_radius),
+                // @intCast(y - World.chunk_radius / 2),
+                0,
+                @intCast(z - World.chunk_radius),
+            };
+            if (math.vec.length2(pos) < World.chunk_radius * World.chunk_radius) {
+                try world.addChunk(chunk, pos);
+            }
         }
     }
+    // }
 
     while (world.upload_queue.len > 0) {
         const cmd = try beginImmediateSubmit(immediate_context);
@@ -417,41 +426,57 @@ fn fixedUpdate(self: *@This()) !void {
     const right = math.vec.mul(self.camera.right, speed);
     const up = math.vec.mul(self.camera.up, speed);
 
-    const prev_chunk: math.Vec3i = .{ @intFromFloat(self.camera.pos[0] / Chunk.width), 0, @intFromFloat(self.camera.pos[2] / Chunk.depth) };
+    const prev_chunk: math.Vec3i = .{
+        @intFromFloat(self.camera.pos[0] / Chunk.width),
+        @intFromFloat(self.camera.pos[1] / Chunk.height),
+        @intFromFloat(self.camera.pos[2] / Chunk.depth),
+    };
     if (self.window.keyboard.keys[c.GLFW_KEY_W].down) self.camera.pos = math.vec.add(self.camera.pos, forward);
     if (self.window.keyboard.keys[c.GLFW_KEY_S].down) self.camera.pos = math.vec.sub(self.camera.pos, forward);
     if (self.window.keyboard.keys[c.GLFW_KEY_D].down) self.camera.pos = math.vec.add(self.camera.pos, right);
     if (self.window.keyboard.keys[c.GLFW_KEY_A].down) self.camera.pos = math.vec.sub(self.camera.pos, right);
     if (self.window.keyboard.keys[c.GLFW_KEY_SPACE].down) self.camera.pos = math.vec.add(self.camera.pos, up);
     if (self.window.keyboard.keys[c.GLFW_KEY_LEFT_SHIFT].down) self.camera.pos = math.vec.sub(self.camera.pos, up);
-    const current_chunk: math.Vec3i = .{ @intFromFloat(self.camera.pos[0] / Chunk.width), 0, @intFromFloat(self.camera.pos[2] / Chunk.depth) };
+    const current_chunk: math.Vec3i = .{
+        @intFromFloat(self.camera.pos[0] / Chunk.width),
+        @intFromFloat(self.camera.pos[1] / Chunk.height),
+        @intFromFloat(self.camera.pos[2] / Chunk.depth),
+    };
 
     if (current_chunk[0] != prev_chunk[0] or
         current_chunk[1] != prev_chunk[1] or
         current_chunk[2] != prev_chunk[2])
     {
-        const min = .{ current_chunk[0] - chunk_radius / 2, 0, current_chunk[2] - chunk_radius / 2 };
-        const max = .{ current_chunk[0] + chunk_radius / 2, 0, current_chunk[2] + chunk_radius / 2 };
+        // const min = .{ current_chunk[0] - World.chunk_radius / 2, 0, current_chunk[2] - World.chunk_radius / 2 };
+        // const max = .{ current_chunk[0] + World.chunk_radius / 2, 0, current_chunk[2] + World.chunk_radius / 2 };
 
-        var it = self.world.chunkIterator();
-        while (it.next()) |chunk| {
-            if (chunk.position[0] < min[0] or chunk.position[0] > max[0] or
-                chunk.position[1] < min[1] or chunk.position[1] > max[1] or
-                chunk.position[2] < min[2] or chunk.position[2] > max[2])
-            {
-                self.world.removeChunk(chunk.position);
-            }
-        }
+        // var it = self.world.chunkIterator();
+        // while (it.next()) |chunk| {
+        //     if (chunk.position[0] < min[0] or chunk.position[0] > max[0] or
+        //         chunk.position[1] < min[1] or chunk.position[1] > max[1] or
+        //         chunk.position[2] < min[2] or chunk.position[2] > max[2])
+        //     {
+        //         self.world.removeChunk(chunk.position);
+        //     }
+        // }
 
         self.chunk_temp.default();
-        for (0..chunk_radius) |j| {
-            for (0..chunk_radius) |i| {
+        // for (0..World.chunk_radius) |j| {
+        for (0..World.chunk_radius * 2) |i| {
+            for (0..World.chunk_radius * 2) |k| {
                 const x: i32 = @intCast(i);
-                const z: i32 = @intCast(j);
-                const pos = .{ current_chunk[0] + x - chunk_radius / 2, 0, current_chunk[2] + z - chunk_radius / 2 };
-                try self.world.addChunk(self.chunk_temp, pos);
+                // const y: i32 = @intCast(j);
+                const z: i32 = @intCast(k);
+                const pos: math.Vec3i = .{ current_chunk[0] + x - World.chunk_radius, 0, current_chunk[2] + z - World.chunk_radius };
+                const dist = math.vec.length2(math.vec.sub(pos, current_chunk));
+                if (dist < World.chunk_radius * World.chunk_radius) {
+                    try self.world.addChunk(self.chunk_temp, pos);
+                } else {
+                    self.world.removeChunk(pos);
+                }
             }
         }
+        // }
     }
 }
 
