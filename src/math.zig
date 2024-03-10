@@ -202,12 +202,37 @@ pub const vec = struct {
 
     pub inline fn eql(a: anytype, b: @TypeOf(a)) bool {
         const size = vecsize(@TypeOf(a));
-        return switch (size) {
-            2 => a[0] == b[0] and a[1] == b[1],
-            3 => a[0] == b[0] and a[1] == b[1] and a[2] == b[2],
-            4 => a[0] == b[0] and a[1] == b[1] and a[2] == b[2] and a[3] == b[3],
-            else => unsupportedType(@TypeOf(a)),
-        };
+        var out = true;
+        inline for (0..size) |i| {
+            out = out and a[i] == b[i];
+        }
+        return out;
+    }
+
+    pub fn intToFloat(comptime T: type, v: anytype) Vec(T, vecsize(@TypeOf(v))) {
+        if (@typeInfo(T) != .Float) @compileError("T must be a floating point type");
+        if (@typeInfo(ChildType(@TypeOf(v))) != .Int) @compileError("child type of v must be a integer type");
+
+        const size = vecsize(@TypeOf(v));
+        var out: Vec(T, size) = undefined;
+        for (0..size) |i| {
+            out[i] = @floatFromInt(v[i]);
+        }
+
+        return out;
+    }
+
+    pub fn floatToInt(comptime T: type, v: anytype) Vec(T, vecsize(@TypeOf(v))) {
+        if (@typeInfo(T) != .Int) @compileError("T must be a integer type");
+        if (@typeInfo(ChildType(@TypeOf(v))) != .Float) @compileError("child type of v must be a floating point type");
+
+        const size = vecsize(@TypeOf(v));
+        var out: Vec(T, size) = undefined;
+        for (0..size) |i| {
+            out[i] = @intFromFloat(v[i]);
+        }
+
+        return out;
     }
 };
 

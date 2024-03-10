@@ -139,8 +139,6 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
         },
     });
 
-    std.log.info("anisotropy: {d}", .{physical_device.properties.limits.max_sampler_anisotropy});
-
     const device = try vkk.Device.create(&physical_device, null, null);
     errdefer device.destroy();
 
@@ -274,7 +272,6 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     var world = try World.init(allocator, device.handle, vertex_buffer_memory, index_buffer_memory, &deletion_queue);
 
     const chunk = try allocator.create(Chunk);
-    chunk.default();
 
     for (0..World.chunk_radius * 2) |j| {
         for (0..World.chunk_radius * 2) |i| {
@@ -288,6 +285,7 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
                     @intCast(z - World.chunk_radius),
                 };
                 if (math.vec.length2(pos) < World.chunk_radius * World.chunk_radius) {
+                    chunk.generateChunk(pos);
                     try world.addChunk(chunk, pos);
                 }
             }
@@ -446,7 +444,6 @@ fn fixedUpdate(self: *@This()) !void {
         current_chunk[1] != prev_chunk[1] or
         current_chunk[2] != prev_chunk[2])
     {
-        self.chunk_temp.default();
         for (0..World.chunk_radius * 2) |j| {
             for (0..World.chunk_radius * 2) |i| {
                 for (0..World.chunk_radius * 2) |k| {
@@ -460,6 +457,7 @@ fn fixedUpdate(self: *@This()) !void {
                     };
                     const dist = math.vec.length2(math.vec.sub(pos, current_chunk));
                     if (dist < World.chunk_radius * World.chunk_radius) {
+                        self.chunk_temp.generateChunk(pos);
                         try self.world.addChunk(self.chunk_temp, pos);
                     } else {
                         self.world.removeChunk(pos);

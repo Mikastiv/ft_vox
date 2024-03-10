@@ -3,6 +3,7 @@ const mesh = @import("mesh.zig");
 const Block = @import("Block.zig");
 const math = @import("math.zig");
 const vk = @import("vulkan-zig");
+const noise = @import("noise.zig");
 
 const assert = std.debug.assert;
 
@@ -44,6 +45,32 @@ pub fn default(self: *@This()) void {
     self.setBlock(8, 3, 8, .tnt);
     self.setBlock(8, 4, 8, .tnt);
     self.setBlock(8, 5, 8, .tnt);
+}
+
+pub fn generateChunk(self: *@This(), pos: math.Vec3i) void {
+    const pos_f = math.vec.intToFloat(f32, pos);
+    var height_map: [width * depth]i32 = undefined;
+    for (0..height_map.len) |i| {
+        const x: f32 = @floatFromInt(i % width);
+        const z: f32 = @floatFromInt(i / depth);
+        height_map[i] = @intFromFloat(noise.perlin(pos_f[0] + x / width, pos_f[2] + z / depth) * height);
+    }
+    for (0..depth) |z| {
+        for (0..height) |y| {
+            for (0..width) |x| {
+                const pos_height = height_map[z * depth + x];
+                const block_height = pos[1] * height + @as(i32, @intCast(y));
+                if (block_height <= pos_height) {
+                    if (block_height == pos_height)
+                        self.setBlock(x, y, z, .grass)
+                    else
+                        self.setBlock(x, y, z, .dirt);
+                } else {
+                    self.setBlock(x, y, z, .air);
+                }
+            }
+        }
+    }
 }
 
 pub fn generateMesh(

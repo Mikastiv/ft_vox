@@ -142,7 +142,6 @@ fn uploadChunk(self: *@This(), device: vk.Device, pos: math.Vec3i, cmd: vk.Comma
         const neighbor_idx = self.chunk_mapping.get(math.vec.add(pos, Chunk.directions[i]));
         if (neighbor_idx) |n_idx| {
             const ptr = &self.chunks[n_idx];
-            // _ = ptr;
             neighbor_chunks[i] = ptr;
         } else {
             neighbor_chunks[i] = null;
@@ -155,7 +154,10 @@ fn uploadChunk(self: *@This(), device: vk.Device, pos: math.Vec3i, cmd: vk.Comma
 
     const vertex_size = @sizeOf(mesh.Vertex) * vertices.len;
     const index_size = @sizeOf(u16) * indices.len;
+    self.states[idx] = .loaded;
+    self.index_counts[idx] = @intCast(indices.len);
     assert(vertex_size + index_size <= Engine.staging_buffer_size);
+    if (indices.len == 0) return;
 
     {
         const data = try vkd().mapMemory(device, staging_buffer.memory, 0, vertex_size + index_size, .{});
@@ -171,9 +173,6 @@ fn uploadChunk(self: *@This(), device: vk.Device, pos: math.Vec3i, cmd: vk.Comma
 
     const index_copy = vk.BufferCopy{ .size = index_size, .src_offset = vertex_size, .dst_offset = 0 };
     vkd().cmdCopyBuffer(cmd, staging_buffer.handle, self.index_buffers[idx], 1, @ptrCast(&index_copy));
-
-    self.states[idx] = .loaded;
-    self.index_counts[idx] = @intCast(indices.len);
 }
 
 fn freeSlot(self: *const @This()) ?usize {
