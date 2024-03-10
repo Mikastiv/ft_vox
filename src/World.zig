@@ -135,6 +135,8 @@ fn uploadChunk(self: *@This(), device: vk.Device, pos: math.Vec3i, cmd: vk.Comma
     const idx = self.chunk_mapping.get(pos) orelse @panic("no chunk");
     assert(self.states[idx] != .empty);
 
+    self.chunks[idx].generateChunk(pos);
+
     self.vertex_upload_buffer.clearRetainingCapacity();
     self.index_upload_buffer.clearRetainingCapacity();
     var neighbor_chunks: [Chunk.directions.len]?*const Chunk = undefined;
@@ -142,6 +144,7 @@ fn uploadChunk(self: *@This(), device: vk.Device, pos: math.Vec3i, cmd: vk.Comma
         const neighbor_idx = self.chunk_mapping.get(math.vec.add(pos, Chunk.directions[i]));
         if (neighbor_idx) |n_idx| {
             const ptr = &self.chunks[n_idx];
+            ptr.generateChunk(self.positions[n_idx]);
             neighbor_chunks[i] = ptr;
         } else {
             neighbor_chunks[i] = null;

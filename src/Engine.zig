@@ -285,7 +285,7 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
                     @intCast(z - World.chunk_radius),
                 };
                 if (math.vec.length2(pos) < World.chunk_radius * World.chunk_radius) {
-                    chunk.generateChunk(pos);
+                    // chunk.generateChunk(pos);
                     try world.addChunk(chunk, pos);
                 }
             }
@@ -457,7 +457,7 @@ fn fixedUpdate(self: *@This()) !void {
                     };
                     const dist = math.vec.length2(math.vec.sub(pos, current_chunk));
                     if (dist < World.chunk_radius * World.chunk_radius) {
-                        self.chunk_temp.generateChunk(pos);
+                        // self.chunk_temp.generateChunk(pos);
                         try self.world.addChunk(self.chunk_temp, pos);
                     } else {
                         self.world.removeChunk(pos);

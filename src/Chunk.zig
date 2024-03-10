@@ -49,12 +49,19 @@ pub fn default(self: *@This()) void {
 
 pub fn generateChunk(self: *@This(), pos: math.Vec3i) void {
     const pos_f = math.vec.intToFloat(f32, pos);
-    const freq = 0.1;
     var height_map: [width * depth]i32 = undefined;
     for (0..height_map.len) |i| {
+        var freq: f32 = 0.05;
+        var amp: f32 = 48.0;
         const x: f32 = @floatFromInt(i % width);
         const z: f32 = @floatFromInt(i / depth);
-        height_map[i] = @intFromFloat(noise.perlin((pos_f[0] + x / width) * freq, (pos_f[2] + z / depth) * freq) * 32);
+        var value: f32 = 0;
+        for (0..12) |_| {
+            value += noise.perlin((pos_f[0] + x / width) * freq, (pos_f[2] + z / depth) * freq) * amp;
+            freq *= 2;
+            amp /= 2;
+        }
+        height_map[i] = @intFromFloat(value);
     }
     for (0..depth) |z| {
         for (0..height) |y| {
