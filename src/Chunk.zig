@@ -3,7 +3,7 @@ const mesh = @import("mesh.zig");
 const Block = @import("Block.zig");
 const math = @import("math.zig");
 const vk = @import("vulkan-zig");
-const noise = @import("noise.zig");
+const Heightmap = @import("Heightmap.zig");
 
 const assert = std.debug.assert;
 
@@ -31,42 +31,12 @@ const Blocks = [width * height * depth]Block.Id;
 
 blocks: Blocks = std.mem.zeroes(Blocks),
 
-pub fn default(self: *@This()) void {
-    self.blocks = std.mem.zeroes(@TypeOf(self.blocks));
-
-    for (0..depth) |z| {
-        for (0..2) |y| {
-            for (0..width) |x| {
-                self.setBlock(x, y, z, .grass);
-            }
-        }
-    }
-    self.setBlock(8, 2, 8, .tnt);
-    self.setBlock(8, 3, 8, .tnt);
-    self.setBlock(8, 4, 8, .tnt);
-    self.setBlock(8, 5, 8, .tnt);
-}
-
 pub fn generateChunk(self: *@This(), pos: math.Vec3i) void {
-    const pos_f = math.vec.intToFloat(f32, pos);
-    var height_map: [width * depth]i32 = undefined;
-    for (0..height_map.len) |i| {
-        var freq: f32 = 0.05;
-        var amp: f32 = 48.0;
-        const x: f32 = @floatFromInt(i % width);
-        const z: f32 = @floatFromInt(i / depth);
-        var value: f32 = 0;
-        for (0..12) |_| {
-            value += noise.perlin((pos_f[0] + x / width) * freq, (pos_f[2] + z / depth) * freq) * amp;
-            freq *= 2;
-            amp /= 2;
-        }
-        height_map[i] = @intFromFloat(value);
-    }
+    const heightmap = Heightmap.generate(pos);
     for (0..depth) |z| {
         for (0..height) |y| {
             for (0..width) |x| {
-                const pos_height = height_map[z * depth + x];
+                const pos_height = heightmap.values[z * depth + x];
                 const block_height = pos[1] * height + @as(i32, @intCast(y));
                 if (block_height <= pos_height) {
                     if (block_height == pos_height)
@@ -143,8 +113,6 @@ pub fn getBlockSides(self: *const @This(), x: usize, y: usize, z: usize, neighbo
                 );
                 if (neighbor_chunk.blocks[neighbor_chunk_idx] == .air)
                     sides = sides.merge(bit);
-            } else {
-                sides = sides.merge(bit);
             }
         }
     }

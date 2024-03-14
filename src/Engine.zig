@@ -135,9 +135,10 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
         .preferred_type = .discrete_gpu,
         .required_features = .{
             .fill_mode_non_solid = vk.TRUE,
-            .sampler_anisotropy = vk.TRUE,
         },
     });
+
+    std.log.info("array layers: {d}", .{physical_device.properties.limits.max_image_array_layers});
 
     const device = try vkk.Device.create(&physical_device, null, null);
     errdefer device.destroy();
