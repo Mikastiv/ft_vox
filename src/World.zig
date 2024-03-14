@@ -6,12 +6,14 @@ const Engine = @import("Engine.zig");
 const vk_utils = @import("vk_utils.zig");
 const mesh = @import("mesh.zig");
 const math = @import("math.zig");
+const Heightmap = @import("Heightmap.zig");
 
 const assert = std.debug.assert;
 const vkd = vkk.dispatch.vkd;
 
 pub const chunk_radius = 8;
-pub const max_loaded_chunk = chunk_radius * chunk_radius * chunk_radius * chunk_radius;
+pub const max_loaded_chunks = chunk_radius * chunk_radius * chunk_radius * chunk_radius;
+pub const max_uploaded_chunks = max_loaded_chunks * 100;
 
 pub const ChunkState = enum {
     empty,
@@ -19,7 +21,7 @@ pub const ChunkState = enum {
     in_queue,
 };
 
-const ChunkUploadQueue = std.BoundedArray(math.Vec3i, max_loaded_chunk);
+const ChunkUploadQueue = std.BoundedArray(math.Vec3i, max_loaded_chunks);
 
 chunk_mapping: std.AutoHashMap(math.Vec3i, usize),
 chunks: []Chunk,
@@ -36,6 +38,7 @@ vertex_upload_buffer: std.ArrayList(mesh.Vertex),
 index_upload_buffer: std.ArrayList(u16),
 
 timer: std.time.Timer,
+heightmap: Heightmap,
 
 pub fn init(
     allocator: std.mem.Allocator,
@@ -45,27 +48,28 @@ pub fn init(
     deletion_queue: *vk_utils.DeletionQueue,
 ) !@This() {
     var hmap = std.AutoHashMap(math.Vec3i, usize).init(allocator);
-    try hmap.ensureTotalCapacity(max_loaded_chunk);
+    try hmap.ensureTotalCapacity(max_loaded_chunks);
 
     const self: @This() = .{
         .chunk_mapping = hmap,
-        .chunks = try allocator.alloc(Chunk, max_loaded_chunk),
-        .positions = try allocator.alloc(math.Vec3i, max_loaded_chunk),
-        .states = try allocator.alloc(ChunkState, max_loaded_chunk),
-        .index_counts = try allocator.alloc(u32, max_loaded_chunk),
-        .vertex_buffers = try allocator.alloc(vk.Buffer, max_loaded_chunk),
-        .index_buffers = try allocator.alloc(vk.Buffer, max_loaded_chunk),
-        .vertex_buffer_offsets = try allocator.alloc(vk.DeviceSize, max_loaded_chunk),
-        .index_buffer_offsets = try allocator.alloc(vk.DeviceSize, max_loaded_chunk),
+        .chunks = try allocator.alloc(Chunk, max_loaded_chunks),
+        .positions = try allocator.alloc(math.Vec3i, max_loaded_chunks),
+        .states = try allocator.alloc(ChunkState, max_loaded_chunks),
+        .index_counts = try allocator.alloc(u32, max_loaded_chunks),
+        .vertex_buffers = try allocator.alloc(vk.Buffer, max_loaded_chunks),
+        .index_buffers = try allocator.alloc(vk.Buffer, max_loaded_chunks),
+        .vertex_buffer_offsets = try allocator.alloc(vk.DeviceSize, max_loaded_chunks),
+        .index_buffer_offsets = try allocator.alloc(vk.DeviceSize, max_loaded_chunks),
         .upload_queue = try ChunkUploadQueue.init(0),
         .vertex_upload_buffer = try std.ArrayList(mesh.Vertex).initCapacity(allocator, Chunk.max_vertices),
         .index_upload_buffer = try std.ArrayList(u16).initCapacity(allocator, Chunk.max_indices),
         .timer = try std.time.Timer.start(),
+        .heightmap = try Heightmap.init(allocator),
     };
 
     @memset(self.states, .empty);
 
-    for (0..max_loaded_chunk) |i| {
+    for (0..max_loaded_chunks) |i| {
         const vertex_buffer_info: vk.BufferCreateInfo = .{
             .size = Chunk.vertex_buffer_size,
             .usage = .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
@@ -135,7 +139,8 @@ fn uploadChunk(self: *@This(), device: vk.Device, pos: math.Vec3i, cmd: vk.Comma
     const idx = self.chunk_mapping.get(pos) orelse @panic("no chunk");
     assert(self.states[idx] != .empty);
 
-    self.chunks[idx].generateChunk(pos);
+    const chunk_heightmap = try self.heightmap.get(.{ pos[0], pos[2] });
+    self.chunks[idx].generateChunk(pos, chunk_heightmap);
 
     self.vertex_upload_buffer.clearRetainingCapacity();
     self.index_upload_buffer.clearRetainingCapacity();
@@ -144,7 +149,9 @@ fn uploadChunk(self: *@This(), device: vk.Device, pos: math.Vec3i, cmd: vk.Comma
         const neighbor_idx = self.chunk_mapping.get(math.vec.add(pos, Chunk.directions[i]));
         if (neighbor_idx) |n_idx| {
             const ptr = &self.chunks[n_idx];
-            ptr.generateChunk(self.positions[n_idx]);
+            const neighbor_pos = self.positions[n_idx];
+            const neighbor_heightmap = try self.heightmap.get(.{ neighbor_pos[0], neighbor_pos[2] });
+            ptr.generateChunk(neighbor_pos, neighbor_heightmap);
             neighbor_chunks[i] = ptr;
         } else {
             neighbor_chunks[i] = null;

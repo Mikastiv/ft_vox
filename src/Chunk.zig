@@ -31,12 +31,11 @@ const Blocks = [width * height * depth]Block.Id;
 
 blocks: Blocks = std.mem.zeroes(Blocks),
 
-pub fn generateChunk(self: *@This(), pos: math.Vec3i) void {
-    const heightmap = Heightmap.generate(pos);
+pub fn generateChunk(self: *@This(), pos: math.Vec3i, heightmap: *const Heightmap.ChunkHeightmap) void {
     for (0..depth) |z| {
         for (0..height) |y| {
             for (0..width) |x| {
-                const pos_height = heightmap.values[z * depth + x];
+                const pos_height = heightmap[z * depth + x];
                 const block_height = pos[1] * height + @as(i32, @intCast(y));
                 if (block_height <= pos_height) {
                     if (block_height == pos_height)
