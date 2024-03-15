@@ -113,6 +113,8 @@ deletion_queue: vk_utils.DeletionQueue,
 
 frame_number: u64 = 0,
 fps: f32 = 0,
+chunk_upload_history: [128]u64 = [1]u64{0} ** 128,
+chunk_upload_current: usize = 0,
 timer: std.time.Timer,
 
 swapchain_resize_requested: bool = false,
@@ -537,7 +539,10 @@ fn draw(self: *@This()) !void {
 
     self.timer.reset();
     const uploaded = try self.world.uploadChunkFromQueue(device, cmd, self.staging_buffer);
-    if (uploaded) std.log.info("chunk upload {}", .{std.fmt.fmtDuration(self.timer.lap())});
+    if (uploaded) {
+        self.chunk_upload_history[self.chunk_upload_current] = self.timer.lap();
+        self.chunk_upload_current = (self.chunk_upload_current + 1) % self.chunk_upload_history.len;
+    }
 
     const clear_value = vk.ClearValue{ .color = .{ .float_32 = .{ 0.1, 0.1, 0.1, 1 } } };
     const depth_clear = vk.ClearValue{ .depth_stencil = .{ .depth = 0, .stencil = 0 } };
@@ -630,8 +635,12 @@ fn renderImGuiFrame(self: *@This()) void {
     c.cImGui_ImplGlfw_NewFrame();
     c.ImGui_NewFrame();
 
-    if (c.ImGui_Begin("info", null, c.ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (c.ImGui_Begin("info", null, c.ImGuiWindowFlags_None)) {
         c.ImGui_Text("Fps: %.2f", self.fps);
+        const average = math.average(u64, &self.chunk_upload_history);
+        var buffer: [16]u8 = undefined;
+        _ = std.fmt.bufPrintZ(&buffer, "{:.3}", .{std.fmt.fmtDuration(average)}) catch @panic("buffer too small");
+        c.ImGui_Text("Average chunk upload: %s", &buffer);
         c.ImGui_BeginDisabled(true);
         _ = c.ImGui_Checkbox("mouse captured", &self.window.mouse_captured);
         c.ImGui_EndDisabled();

@@ -893,3 +893,11 @@ pub fn smallestEnclosingSphere(points: []Vec3) Sphere {
     std.debug.assert(points.len > 1);
     return smallestEnclosingSphereImpl(points, points.len, null, null, null);
 }
+
+pub fn average(comptime T: type, values: []const T) T {
+    var sum: T = 0;
+    for (values) |value| {
+        sum += value;
+    }
+    return sum / values.len;
+}
