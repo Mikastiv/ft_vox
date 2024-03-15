@@ -441,10 +441,10 @@ fn fixedUpdate(self: *@This()) !void {
         @intFromFloat(self.camera.pos[2] / Chunk.depth),
     };
 
-    var buffer: [2048]u8 = undefined;
+    var buffer: [4096]u8 = undefined;
     var fba = std.heap.FixedBufferAllocator.init(&buffer);
     var chunk_it = self.world.chunkIterator();
-    var to_delete = try std.ArrayList(math.Vec3i).initCapacity(fba.allocator(), 100);
+    var to_delete = try std.ArrayList(math.Vec3i).initCapacity(fba.allocator(), 300);
     while (chunk_it.next()) |chunk| {
         const dist = math.vec.length2(math.vec.sub(chunk.position, current_chunk));
         if (dist > World.chunk_radius * World.chunk_radius) {
@@ -472,10 +472,7 @@ fn fixedUpdate(self: *@This()) !void {
                     };
                     const dist = math.vec.length2(math.vec.sub(pos, current_chunk));
                     if (dist < World.chunk_radius * World.chunk_radius) {
-                        // self.chunk_temp.generateChunk(pos);
                         try self.world.addChunk(self.chunk_temp, pos);
-                    } else {
-                        self.world.removeChunk(pos);
                     }
                 }
             }

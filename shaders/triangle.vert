@@ -1,7 +1,7 @@
 #version 450
 
-layout (location = 0) in vec3 position;
-layout (location = 1) in vec2 uv;
+layout (location = 0) in vec2 uv;
+layout (location = 1) in uint position;
 
 layout (location = 0) out vec2 out_uv;
 
@@ -16,6 +16,9 @@ layout (push_constant) uniform PushConstants {
 } push;
 
 void main() {
-    gl_Position = scene_data.view_proj * push.model * vec4(position, 1);
+    uint x = position & 0x1F;
+    uint y = (position >> 5) & 0x1F;
+    uint z = (position >> 10) & 0x1F;
+    gl_Position = scene_data.view_proj * push.model * vec4(float(x), float(y), float(z), 1);
     out_uv = uv;
 }
