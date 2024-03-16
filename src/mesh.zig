@@ -15,7 +15,7 @@ pub const PackedVertex = packed struct(u32) {
     y: u5,
     z: u5,
     index: u8,
-    _unused: u9,
+    _unused: u9 = 0,
 
     pub fn init(vec: math.Vec3, texture_index: u8) @This() {
         assert(vec[0] < 17);
@@ -31,7 +31,6 @@ pub const PackedVertex = packed struct(u32) {
             .y = y,
             .z = z,
             .index = texture_index,
-            ._unused = 0,
         };
     }
 };

@@ -11,7 +11,7 @@ const Heightmap = @import("Heightmap.zig");
 const assert = std.debug.assert;
 const vkd = vkk.dispatch.vkd;
 
-pub const chunk_radius = 8;
+pub const chunk_radius = 9;
 pub const max_loaded_chunks = chunk_radius * chunk_radius * chunk_radius * chunk_radius;
 pub const max_uploaded_chunks = max_loaded_chunks * 100 * 100;
 
@@ -202,7 +202,7 @@ pub const ChunkData = struct {
 };
 
 pub const ChunkIterator = struct {
-    inner: std.AutoHashMap(math.Vec3i, usize).Iterator,
+    current: usize = 0,
     chunks: []Chunk,
     positions: []math.Vec3i,
     states: []ChunkState,
@@ -211,8 +211,15 @@ pub const ChunkIterator = struct {
     index_counts: []u32,
 
     pub fn next(self: *@This()) ?ChunkData {
-        const entry = self.inner.next() orelse return null;
-        const idx = entry.value_ptr.*;
+        while (self.current < self.chunks.len) {
+            if (self.states[self.current] != .empty) break;
+            self.current += 1;
+        }
+        if (self.current >= self.chunks.len) return null;
+
+        const idx = self.current;
+        self.current += 1;
+
         return .{
             .data = &self.chunks[idx],
             .position = self.positions[idx],
@@ -226,7 +233,6 @@ pub const ChunkIterator = struct {
 
 pub fn chunkIterator(self: *@This()) ChunkIterator {
     return .{
-        .inner = self.chunk_mapping.iterator(),
         .chunks = self.chunks,
         .positions = self.positions,
         .states = self.states,

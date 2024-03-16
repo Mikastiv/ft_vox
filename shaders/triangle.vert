@@ -16,10 +16,10 @@ layout (push_constant) uniform PushConstants {
 } push;
 
 const vec2 uvs[4] = vec2[](
-    vec2(0.0, 0.0),
-    vec2(0.0, 1.0),
-    vec2(1.0, 1.0),
-    vec2(1.0, 0.0)
+    vec2(0, 0),
+    vec2(0, 1),
+    vec2(1, 1),
+    vec2(1, 0)
 );
 
 void main() {
@@ -27,7 +27,7 @@ void main() {
     uint y = (data >> 5) & 0x1F;
     uint z = (data >> 10) & 0x1F;
     uint texture_index = (data >> 15) & 0xFF;
-    gl_Position = scene_data.view_proj * push.model * vec4(float(x), float(y), float(z), 1);
+    gl_Position = scene_data.view_proj * push.model * vec4(x, y, z, 1);
     out_uv = uvs[gl_VertexIndex % 4];
     out_index = texture_index;
 }
