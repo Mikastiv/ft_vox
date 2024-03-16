@@ -8,7 +8,7 @@ pub fn commandBufferAllocateInfo(command_pool: vk.CommandPool) vk.CommandBufferA
     };
 }
 
-pub fn imageCreateInfo(format: vk.Format, usage: vk.ImageUsageFlags, extent: vk.Extent3D) vk.ImageCreateInfo {
+pub fn imageCreateInfo(format: vk.Format, usage: vk.ImageUsageFlags, extent: vk.Extent3D, layer_count: u32) vk.ImageCreateInfo {
     return .{
         .image_type = .@"2d",
         .format = format,
@@ -18,7 +18,7 @@ pub fn imageCreateInfo(format: vk.Format, usage: vk.ImageUsageFlags, extent: vk.
             .depth = 1,
         },
         .mip_levels = 1,
-        .array_layers = 1,
+        .array_layers = layer_count,
         .samples = .{ .@"1_bit" = true },
         .tiling = .optimal,
         .usage = usage,
@@ -27,9 +27,9 @@ pub fn imageCreateInfo(format: vk.Format, usage: vk.ImageUsageFlags, extent: vk.
     };
 }
 
-pub fn imageViewCreateInfo(format: vk.Format, image: vk.Image, aspect_flags: vk.ImageAspectFlags) vk.ImageViewCreateInfo {
+pub fn imageViewCreateInfo(format: vk.Format, image: vk.Image, aspect_flags: vk.ImageAspectFlags, view_type: vk.ImageViewType, layer_count: u32) vk.ImageViewCreateInfo {
     return .{
-        .view_type = .@"2d",
+        .view_type = view_type,
         .image = image,
         .format = format,
         .subresource_range = .{
@@ -37,7 +37,7 @@ pub fn imageViewCreateInfo(format: vk.Format, image: vk.Image, aspect_flags: vk.
             .base_mip_level = 0,
             .level_count = 1,
             .base_array_layer = 0,
-            .layer_count = 1,
+            .layer_count = layer_count,
         },
         .components = .{ .r = .identity, .g = .identity, .b = .identity, .a = .identity },
     };

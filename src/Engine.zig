@@ -106,14 +106,14 @@ camera: Camera,
 
 descriptor_set: vk.DescriptorSet,
 scene_data: GpuSceneData = .{},
-texture_atlas: AllocatedImage,
+block_textures: AllocatedImage,
 nearest_sampler: vk.Sampler,
 
 deletion_queue: vk_utils.DeletionQueue,
 
 frame_number: u64 = 0,
 fps: f32 = 0,
-chunk_upload_history: [128]u64 = [1]u64{0} ** 128,
+chunk_upload_history: [128]u64 = .{0} ** 128,
 chunk_upload_current: usize = 0,
 timer: std.time.Timer,
 
@@ -223,8 +223,8 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     );
     try deletion_queue.appendBuffer(staging_buffer);
 
-    const texture_atlas = try texture.loadFromFile(&device, staging_buffer, immediate_context, "assets/atlas.png");
-    try deletion_queue.appendImage(texture_atlas);
+    const block_textures = try texture.loadBlockTextures(&device, staging_buffer, immediate_context);
+    try deletion_queue.appendImage(block_textures);
 
     const nearest_sampler_info = vk_init.samplerCreateInfo(.nearest);
     const nearest_sampler = try vkd().createSampler(device.handle, &nearest_sampler_info, null);
@@ -288,7 +288,6 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
                     @intCast(z - World.chunk_radius),
                 };
                 if (math.vec.length2(pos) < World.chunk_radius * World.chunk_radius) {
-                    // chunk.generateChunk(pos);
                     try world.addChunk(chunk, pos);
                 }
             }
@@ -325,7 +324,7 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
 
     var writer = descriptor.Writer.init(allocator);
     try writer.writeBuffer(0, scene_data_buffer.handle, @sizeOf(GpuSceneData), 0, .uniform_buffer_dynamic);
-    try writer.writeImage(1, texture_atlas.view, .shader_read_only_optimal, nearest_sampler, .combined_image_sampler);
+    try writer.writeImage(1, block_textures.view, .shader_read_only_optimal, nearest_sampler, .combined_image_sampler);
     writer.updateSet(device.handle, descriptor_set);
 
     var self: @This() = .{
@@ -351,7 +350,7 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
         .world = world,
         .scene_data_buffer = scene_data_buffer,
         .descriptor_set = descriptor_set,
-        .texture_atlas = texture_atlas,
+        .block_textures = block_textures,
         .nearest_sampler = nearest_sampler,
         .timer = try std.time.Timer.start(),
     };
@@ -686,6 +685,8 @@ fn createDepthImage(device: vk.Device, physical_device: vk.PhysicalDevice, forma
         .{ .width = extent.width, .height = extent.height, .depth = 1 },
         .{ .device_local_bit = true },
         .{ .depth_bit = true },
+        .@"2d_array",
+        1,
     );
 }
 

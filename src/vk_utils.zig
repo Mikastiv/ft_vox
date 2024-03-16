@@ -333,12 +333,14 @@ pub fn createImage(
     extent: vk.Extent3D,
     property_flags: vk.MemoryPropertyFlags,
     aspect_flags: vk.ImageAspectFlags,
+    view_type: vk.ImageViewType,
+    layer_count: u32,
 ) !Engine.AllocatedImage {
     assert(device != .null_handle);
     assert(physical_device != .null_handle);
     assert(format != .undefined);
 
-    const image_info = vk_init.imageCreateInfo(format, usage, extent);
+    const image_info = vk_init.imageCreateInfo(format, usage, extent, layer_count);
     const image = try vkd().createImage(device, &image_info, null);
     errdefer vkd().destroyImage(device, image, null);
 
@@ -360,7 +362,7 @@ pub fn createImage(
 
     try vkd().bindImageMemory(device, image, memory, 0);
 
-    const image_view_info = vk_init.imageViewCreateInfo(format, image, aspect_flags);
+    const image_view_info = vk_init.imageViewCreateInfo(format, image, aspect_flags, view_type, layer_count);
     const image_view = try vkd().createImageView(device, &image_view_info, null);
     errdefer vkd().destroyImageView(device, image_view, null);
 
