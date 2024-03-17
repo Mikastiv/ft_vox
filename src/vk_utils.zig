@@ -335,12 +335,13 @@ pub fn createImage(
     aspect_flags: vk.ImageAspectFlags,
     view_type: vk.ImageViewType,
     layer_count: u32,
+    flags: vk.ImageCreateFlags,
 ) !Engine.AllocatedImage {
     assert(device != .null_handle);
     assert(physical_device != .null_handle);
     assert(format != .undefined);
 
-    const image_info = vk_init.imageCreateInfo(format, usage, extent, layer_count);
+    const image_info = vk_init.imageCreateInfo(format, usage, extent, layer_count, flags);
     const image = try vkd().createImage(device, &image_info, null);
     errdefer vkd().destroyImage(device, image, null);
 

@@ -44,6 +44,8 @@ pub fn loadFromFile(
         extent,
         .{ .device_local_bit = true },
         .{ .color_bit = true },
+        1,
+        .{},
     );
 
     try Engine.immediateSubmit(device.handle, device.graphics_queue, immediate_context, ImageCopy{
@@ -182,6 +184,7 @@ pub fn loadBlockTextures(
         .{ .color_bit = true },
         .@"2d_array",
         Block.texture_names.kvs.len,
+        .{},
     );
 
     try Engine.immediateSubmit(device.handle, device.graphics_queue, immediate_context, ImageArrayCopy{
@@ -244,3 +247,86 @@ const ImageArrayCopy = struct {
         vkd().cmdPipelineBarrier(cmd, .{ .transfer_bit = true }, .{ .fragment_shader_bit = true }, .{}, 0, null, 0, null, 1, @ptrCast(&image_barrier));
     }
 };
+
+pub fn loadCubemap(
+    device: *const vkk.Device,
+    staging_buffer: Engine.AllocatedBuffer,
+    immediate_context: Engine.ImmediateContext,
+    filenames: [6][*:0]const u8,
+) !Engine.AllocatedImage {
+    const data = try vkd().mapMemory(device.handle, staging_buffer.memory, 0, vk.WHOLE_SIZE, .{});
+    defer vkd().unmapMemory(device.handle, staging_buffer.memory);
+
+    const gpu_ptr: [*]c.stbi_uc = @ptrCast(@alignCast(data));
+
+    var extent: vk.Extent3D = undefined;
+
+    var copy_regions = try std.BoundedArray(vk.BufferImageCopy, 32).init(0);
+    var current_offset: usize = 0;
+    for (filenames, 0..) |filename, i| {
+        var width: c_int = undefined;
+        var height: c_int = undefined;
+        var channels: c_int = undefined;
+
+        const pixels = c.stbi_load(filename, &width, &height, &channels, c.STBI_rgb_alpha) orelse
+            return error.TextureLoadingFailed;
+        defer c.stbi_image_free(pixels);
+
+        const image_size: usize = @intCast(width * height * 4);
+
+        @memcpy(gpu_ptr[current_offset .. current_offset + image_size], pixels[0..image_size]);
+
+        if (i == 0) {
+            extent = .{
+                .width = @intCast(width),
+                .height = @intCast(height),
+                .depth = 1,
+            };
+        } else {
+            assert(extent.width == @as(u32, @intCast(width)));
+            assert(extent.height == @as(u32, @intCast(height)));
+        }
+
+        const copy_region = vk.BufferImageCopy{
+            .buffer_offset = @intCast(current_offset),
+            .buffer_row_length = 0,
+            .buffer_image_height = 0,
+            .image_subresource = .{
+                .aspect_mask = .{ .color_bit = true },
+                .mip_level = 0,
+                .base_array_layer = @intCast(i),
+                .layer_count = 1,
+            },
+            .image_offset = .{ .x = 0, .y = 0, .z = 0 },
+            .image_extent = extent,
+        };
+        try copy_regions.append(copy_region);
+
+        current_offset += image_size;
+    }
+
+    const format: vk.Format = .r8g8b8a8_srgb;
+    const image = try vk_utils.createImage(
+        device.handle,
+        device.physical_device,
+        format,
+        .{ .transfer_dst_bit = true, .sampled_bit = true },
+        extent,
+        .{ .device_local_bit = true },
+        .{ .color_bit = true },
+        .cube,
+        6,
+        .{ .cube_compatible_bit = true },
+    );
+
+    try Engine.immediateSubmit(device.handle, device.graphics_queue, immediate_context, ImageArrayCopy{
+        .image = image.handle,
+        .buffer = staging_buffer.handle,
+        .queue_family_index = device.graphics_queue_index,
+        .extent = extent,
+        .layer_count = 6,
+        .copy_regions = copy_regions.constSlice(),
+    });
+
+    return image;
+}

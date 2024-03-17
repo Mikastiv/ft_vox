@@ -248,6 +248,16 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     const block_textures = try texture.loadBlockTextures(&device, staging_buffer, immediate_context);
     try deletion_queue.appendImage(block_textures);
 
+    const cubemap = try texture.loadCubemap(&device, staging_buffer, immediate_context, .{
+        "assets/sky_right.jpg",
+        "assets/sky_left.jpg",
+        "assets/sky_top.jpg",
+        "assets/sky_bottom.jpg",
+        "assets/sky_front.jpg",
+        "assets/sky_back.jpg",
+    });
+    try deletion_queue.appendImage(cubemap);
+
     const nearest_sampler_info = vk_init.samplerCreateInfo(.nearest);
     const nearest_sampler = try vkd().createSampler(device.handle, &nearest_sampler_info, null);
     try deletion_queue.append(nearest_sampler);
@@ -703,6 +713,7 @@ fn createDepthImage(device: vk.Device, physical_device: vk.PhysicalDevice, forma
         .{ .depth_bit = true },
         .@"2d_array",
         1,
+        .{},
     );
 }
 

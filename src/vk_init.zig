@@ -8,8 +8,9 @@ pub fn commandBufferAllocateInfo(command_pool: vk.CommandPool) vk.CommandBufferA
     };
 }
 
-pub fn imageCreateInfo(format: vk.Format, usage: vk.ImageUsageFlags, extent: vk.Extent3D, layer_count: u32) vk.ImageCreateInfo {
+pub fn imageCreateInfo(format: vk.Format, usage: vk.ImageUsageFlags, extent: vk.Extent3D, layer_count: u32, flags: vk.ImageCreateFlags) vk.ImageCreateInfo {
     return .{
+        .flags = flags,
         .image_type = .@"2d",
         .format = format,
         .extent = .{
