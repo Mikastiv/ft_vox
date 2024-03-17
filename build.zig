@@ -29,6 +29,8 @@ pub fn build(b: *std.Build) void {
     const shaders = vkgen.ShaderCompileStep.create(b, &.{ "glslc", "--target-env=vulkan1.1" }, "-o");
     addShader(shaders, "triangle_vert", "triangle.vert");
     addShader(shaders, "triangle_frag", "triangle.frag");
+    addShader(shaders, "skybox_vert", "skybox.vert");
+    addShader(shaders, "skybox_frag", "skybox.frag");
 
     const wf = b.addWriteFiles();
     const stb_image = wf.add("stb_image.c",

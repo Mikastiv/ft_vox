@@ -50,6 +50,21 @@ pub const Vertex = extern struct {
     }
 };
 
+pub const SkyboxVertex = extern struct {
+    pos: math.Vec3,
+
+    pub fn getInputDescription() VertexInputDescription {
+        return .{
+            .bindings = .{
+                .{ .binding = 0, .stride = @sizeOf(@This()), .input_rate = .vertex },
+            },
+            .attributes = .{
+                .{ .binding = 0, .location = 0, .format = .r32g32b32_sfloat, .offset = @offsetOf(@This(), "pos") },
+            },
+        };
+    }
+};
+
 pub const CubeSides = packed struct {
     north: bool = false,
     south: bool = false,

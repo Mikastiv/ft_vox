@@ -96,12 +96,14 @@ immediate_context: ImmediateContext,
 render_pass: vk.RenderPass,
 default_pipeline_layout: vk.PipelineLayout,
 default_pipeline: vk.Pipeline,
+skybox_render_pass: vk.RenderPass,
+skybox_pipeline_layout: vk.PipelineLayout,
+skybox_pipeline: vk.Pipeline,
 
 staging_buffer: AllocatedBuffer,
 scene_data_buffer: AllocatedBuffer,
 
 world: World,
-chunk_temp: *Chunk,
 camera: Camera,
 
 descriptor_set: vk.DescriptorSet,
@@ -172,6 +174,9 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     const render_pass = try vk_utils.defaultRenderPass(device.handle, swapchain.image_format, depth_image.format);
     try deletion_queue.append(render_pass);
 
+    const skybox_render_pass = try vk_utils.defaultRenderPass(device.handle, swapchain.image_format, null);
+    try deletion_queue.append(skybox_render_pass);
+
     const framebuffers = try allocator.alloc(vk.Framebuffer, swapchain.image_count);
     try vk_utils.createFramebuffers(device.handle, render_pass, swapchain.extent, image_views, depth_image.view, framebuffers);
     errdefer vk_utils.destroyFrameBuffers(device.handle, framebuffers);
@@ -213,6 +218,23 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
         depth_image.format,
     );
     try deletion_queue.append(default_pipeline);
+
+    const skybox_pipeline_layout = try vkd().createPipelineLayout(
+        device.handle,
+        &.{
+            .set_layout_count = 1,
+            .p_set_layouts = @ptrCast(&descriptor_layout),
+        },
+        null,
+    );
+    try deletion_queue.append(skybox_pipeline_layout);
+    const skybox_pipeline = try createSkyboxPipeline(
+        device.handle,
+        skybox_pipeline_layout,
+        skybox_render_pass,
+        swapchain.image_format,
+    );
+    try deletion_queue.append(skybox_pipeline);
 
     const staging_buffer = try vk_utils.createBuffer(
         device.handle,
@@ -274,8 +296,6 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
 
     var world = try World.init(allocator, device.handle, vertex_buffer_memory, index_buffer_memory, &deletion_queue);
 
-    const chunk = try allocator.create(Chunk);
-
     for (0..World.chunk_radius * 2) |j| {
         for (0..World.chunk_radius * 2) |i| {
             for (0..World.chunk_radius * 2) |k| {
@@ -288,7 +308,7 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
                     @intCast(z - World.chunk_radius),
                 };
                 if (math.vec.length2(pos) < World.chunk_radius * World.chunk_radius) {
-                    try world.addChunk(chunk, pos);
+                    try world.addChunk(pos);
                 }
             }
         }
@@ -340,13 +360,15 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
         .depth_image = depth_image,
         .framebuffers = framebuffers,
         .render_pass = render_pass,
+        .skybox_render_pass = skybox_render_pass,
         .immediate_context = immediate_context,
         .deletion_queue = deletion_queue,
         .default_pipeline_layout = default_pipeline_layout,
         .default_pipeline = default_pipeline,
+        .skybox_pipeline_layout = skybox_pipeline_layout,
+        .skybox_pipeline = skybox_pipeline,
         .frames = frames,
         .staging_buffer = staging_buffer,
-        .chunk_temp = chunk,
         .world = world,
         .scene_data_buffer = scene_data_buffer,
         .descriptor_set = descriptor_set,
@@ -454,7 +476,7 @@ fn fixedUpdate(self: *@This()) !void {
         current_chunk[1] != prev_chunk[1] or
         current_chunk[2] != prev_chunk[2])
     {
-        for (0..World.chunk_radius * 2) |j| {
+        for (0..World.chunk_radius) |j| {
             for (0..World.chunk_radius * 2) |i| {
                 for (0..World.chunk_radius * 2) |k| {
                     const x: i32 = @intCast(i);
@@ -462,12 +484,12 @@ fn fixedUpdate(self: *@This()) !void {
                     const z: i32 = @intCast(k);
                     const pos: math.Vec3i = .{
                         current_chunk[0] + x - World.chunk_radius,
-                        current_chunk[1] + y - World.chunk_radius,
+                        current_chunk[1] + y - World.chunk_radius / 2,
                         current_chunk[2] + z - World.chunk_radius,
                     };
                     const dist = math.vec.length2(math.vec.sub(pos, current_chunk));
                     if (dist < World.chunk_radius * World.chunk_radius) {
-                        try self.world.addChunk(self.chunk_temp, pos);
+                        try self.world.addChunk(pos);
                     }
                 }
             }
@@ -907,6 +929,38 @@ fn createDefaultPipeline(
         .depth_compare_op = .greater_or_equal,
         .color_attachment_format = image_format,
         .depth_attachment_format = depth_format,
+    });
+
+    return builder.build(device);
+}
+
+fn createSkyboxPipeline(
+    device: vk.Device,
+    layout: vk.PipelineLayout,
+    render_pass: vk.RenderPass,
+    image_format: vk.Format,
+) !vk.Pipeline {
+    assert(device != .null_handle);
+    assert(layout != .null_handle);
+    assert(image_format != .undefined);
+
+    const vertex_shader = try vk_utils.createShaderModule(device, &shaders.skybox_vert);
+    defer vkd().destroyShaderModule(device, vertex_shader, null);
+
+    const fragment_shader = try vk_utils.createShaderModule(device, &shaders.skybox_frag);
+    defer vkd().destroyShaderModule(device, fragment_shader, null);
+
+    const builder = pipeline.Builder.init(.{
+        .vertex_input_description = mesh.SkyboxVertex.getInputDescription(),
+        .render_pass = render_pass,
+        .vertex_shader = vertex_shader,
+        .fragment_shader = fragment_shader,
+        .layout = layout,
+        .topology = .triangle_list,
+        .cull_mode = .{},
+        .polygon_mode = .fill,
+        .front_face = .counter_clockwise,
+        .color_attachment_format = image_format,
     });
 
     return builder.build(device);

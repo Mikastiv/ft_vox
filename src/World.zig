@@ -94,11 +94,10 @@ pub fn init(
     return self;
 }
 
-pub fn addChunk(self: *@This(), chunk: *const Chunk, pos: math.Vec3i) !void {
+pub fn addChunk(self: *@This(), pos: math.Vec3i) !void {
     if (self.chunk_mapping.get(pos) != null) return;
     const idx = self.freeSlot() orelse return error.NoFreeChunkSlot;
 
-    self.chunks[idx] = chunk.*;
     self.states[idx] = .in_queue;
     self.positions[idx] = pos;
     try self.chunk_mapping.put(pos, idx);

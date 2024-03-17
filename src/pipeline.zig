@@ -21,7 +21,7 @@ pub const Builder = struct {
         cull_mode: vk.CullModeFlags,
         front_face: vk.FrontFace,
         color_attachment_format: vk.Format,
-        depth_attachment_format: vk.Format,
+        depth_attachment_format: vk.Format = .undefined,
         enable_depth: bool = false,
         depth_compare_op: vk.CompareOp = .never,
         blend_mode: BlendMode = .none,
