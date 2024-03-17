@@ -119,10 +119,10 @@ pub fn destroyImageViews(device: vk.Device, image_views: []const vk.ImageView) v
     }
 }
 
-pub fn defaultRenderPass(device: vk.Device, image_format: vk.Format, depth_format: ?vk.Format) !vk.RenderPass {
+pub fn defaultRenderPass(device: vk.Device, image_format: vk.Format, depth_format: vk.Format) !vk.RenderPass {
     assert(device != .null_handle);
     assert(image_format != .undefined);
-    if (depth_format) |format| assert(format != .undefined);
+    assert(depth_format != .undefined);
 
     const color_attachment = vk.AttachmentDescription{
         .format = image_format,
@@ -141,7 +141,7 @@ pub fn defaultRenderPass(device: vk.Device, image_format: vk.Format, depth_forma
     };
 
     const depth_attachment = vk.AttachmentDescription{
-        .format = if (depth_format) |format| format else .undefined,
+        .format = depth_format,
         .samples = .{ .@"1_bit" = true },
         .load_op = .clear,
         .store_op = .store,
@@ -160,7 +160,7 @@ pub fn defaultRenderPass(device: vk.Device, image_format: vk.Format, depth_forma
         .pipeline_bind_point = .graphics,
         .color_attachment_count = 1,
         .p_color_attachments = @ptrCast(&color_attachment_ref),
-        .p_depth_stencil_attachment = if (depth_format != null) @ptrCast(&depth_attachment_ref) else null,
+        .p_depth_stencil_attachment = @ptrCast(&depth_attachment_ref),
     };
 
     const dependency = vk.SubpassDependency{
@@ -184,11 +184,11 @@ pub fn defaultRenderPass(device: vk.Device, image_format: vk.Format, depth_forma
     const attachments = [_]vk.AttachmentDescription{ color_attachment, depth_attachment };
     const dependencies = [_]vk.SubpassDependency{ dependency, depth_dependency };
     const render_pass_info = vk.RenderPassCreateInfo{
-        .attachment_count = if (depth_format != null) attachments.len else attachments.len - 1,
+        .attachment_count = attachments.len,
         .p_attachments = &attachments,
         .subpass_count = 1,
         .p_subpasses = @ptrCast(&subpass),
-        .dependency_count = if (depth_format != null) dependencies.len else dependencies.len - 1,
+        .dependency_count = dependencies.len,
         .p_dependencies = &dependencies,
     };
 

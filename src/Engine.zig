@@ -78,6 +78,14 @@ const FrameData = struct {
     render_fence: vk.Fence,
 };
 
+const Skybox = struct {
+    pipeline_layout: vk.PipelineLayout,
+    pipeline: vk.Pipeline,
+    cubemap: AllocatedImage,
+    vertex_buffer: AllocatedBuffer,
+    descriptor_set: vk.DescriptorSet,
+};
+
 window: *Window,
 surface: vk.SurfaceKHR,
 instance: vkk.Instance,
@@ -96,9 +104,7 @@ immediate_context: ImmediateContext,
 render_pass: vk.RenderPass,
 default_pipeline_layout: vk.PipelineLayout,
 default_pipeline: vk.Pipeline,
-skybox_render_pass: vk.RenderPass,
-skybox_pipeline_layout: vk.PipelineLayout,
-skybox_pipeline: vk.Pipeline,
+skybox: Skybox,
 
 staging_buffer: AllocatedBuffer,
 scene_data_buffer: AllocatedBuffer,
@@ -110,6 +116,7 @@ descriptor_set: vk.DescriptorSet,
 scene_data: GpuSceneData = .{},
 block_textures: AllocatedImage,
 nearest_sampler: vk.Sampler,
+linear_sampler: vk.Sampler,
 
 deletion_queue: vk_utils.DeletionQueue,
 
@@ -174,9 +181,6 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     const render_pass = try vk_utils.defaultRenderPass(device.handle, swapchain.image_format, depth_image.format);
     try deletion_queue.append(render_pass);
 
-    const skybox_render_pass = try vk_utils.defaultRenderPass(device.handle, swapchain.image_format, null);
-    try deletion_queue.append(skybox_render_pass);
-
     const framebuffers = try allocator.alloc(vk.Framebuffer, swapchain.image_count);
     try vk_utils.createFramebuffers(device.handle, render_pass, swapchain.extent, image_views, depth_image.view, framebuffers);
     errdefer vk_utils.destroyFrameBuffers(device.handle, framebuffers);
@@ -231,7 +235,7 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     const skybox_pipeline = try createSkyboxPipeline(
         device.handle,
         skybox_pipeline_layout,
-        skybox_render_pass,
+        render_pass,
         swapchain.image_format,
     );
     try deletion_queue.append(skybox_pipeline);
@@ -261,6 +265,107 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     const nearest_sampler_info = vk_init.samplerCreateInfo(.nearest);
     const nearest_sampler = try vkd().createSampler(device.handle, &nearest_sampler_info, null);
     try deletion_queue.append(nearest_sampler);
+
+    var linear_sampler_info = vk_init.samplerCreateInfo(.linear);
+    if (physical_device.features.sampler_anisotropy == vk.TRUE) {
+        linear_sampler_info.anisotropy_enable = vk.TRUE;
+        linear_sampler_info.max_anisotropy = physical_device.properties.limits.max_sampler_anisotropy;
+    }
+    const linear_sampler = try vkd().createSampler(device.handle, &linear_sampler_info, null);
+    try deletion_queue.append(linear_sampler);
+
+    const cube = [_]mesh.SkyboxVertex{
+        .{ .pos = .{ -1, 1, -1 } },
+        .{ .pos = .{ -1, -1, -1 } },
+        .{ .pos = .{ 1, -1, -1 } },
+        .{ .pos = .{ 1, -1, -1 } },
+        .{ .pos = .{ 1, 1, -1 } },
+        .{ .pos = .{ -1, 1, -1 } },
+
+        .{ .pos = .{ -1, -1, 1 } },
+        .{ .pos = .{ -1, -1, -1 } },
+        .{ .pos = .{ -1, 1, -1 } },
+        .{ .pos = .{ -1, 1, -1 } },
+        .{ .pos = .{ -1, 1, 1 } },
+        .{ .pos = .{ -1, -1, 1 } },
+
+        .{ .pos = .{ 1, -1, -1 } },
+        .{ .pos = .{ 1, -1, 1 } },
+        .{ .pos = .{ 1, 1, 1 } },
+        .{ .pos = .{ 1, 1, 1 } },
+        .{ .pos = .{ 1, 1, -1 } },
+        .{ .pos = .{ 1, -1, -1 } },
+
+        .{ .pos = .{ -1, -1, 1 } },
+        .{ .pos = .{ -1, 1, 1 } },
+        .{ .pos = .{ 1, 1, 1 } },
+        .{ .pos = .{ 1, 1, 1 } },
+        .{ .pos = .{ 1, -1, 1 } },
+        .{ .pos = .{ -1, -1, 1 } },
+
+        .{ .pos = .{ -1, 1, -1 } },
+        .{ .pos = .{ 1, 1, -1 } },
+        .{ .pos = .{ 1, 1, 1 } },
+        .{ .pos = .{ 1, 1, 1 } },
+        .{ .pos = .{ -1, 1, 1 } },
+        .{ .pos = .{ -1, 1, -1 } },
+
+        .{ .pos = .{ -1, -1, -1 } },
+        .{ .pos = .{ -1, -1, 1 } },
+        .{ .pos = .{ 1, -1, -1 } },
+        .{ .pos = .{ 1, -1, -1 } },
+        .{ .pos = .{ -1, -1, 1 } },
+        .{ .pos = .{ 1, -1, 1 } },
+    };
+
+    const skybox_buffer = try vk_utils.createBuffer(
+        device.handle,
+        physical_device.handle,
+        @sizeOf(@TypeOf(cube)),
+        .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
+        .{ .device_local_bit = true },
+    );
+    try deletion_queue.appendBuffer(skybox_buffer);
+
+    const SkyboxCopy = struct {
+        staging_buffer: vk.Buffer,
+        dst_buffer: vk.Buffer,
+        size: vk.DeviceSize,
+
+        fn recordCommands(ctx: @This(), cmd: vk.CommandBuffer) void {
+            const copy = vk.BufferCopy{ .size = ctx.size, .src_offset = 0, .dst_offset = 0 };
+            vkd().cmdCopyBuffer(cmd, ctx.staging_buffer, ctx.dst_buffer, 1, @ptrCast(&copy));
+        }
+    };
+
+    {
+        const data = try vkd().mapMemory(device.handle, staging_buffer.memory, 0, vk.WHOLE_SIZE, .{});
+        defer vkd().unmapMemory(device.handle, staging_buffer.memory);
+
+        const ptr: [*]mesh.SkyboxVertex = @ptrCast(@alignCast(data));
+        @memcpy(ptr, cube[0..cube.len]);
+    }
+
+    try immediateSubmit(device.handle, device.graphics_queue, immediate_context, SkyboxCopy{
+        .dst_buffer = skybox_buffer.handle,
+        .size = skybox_buffer.size,
+        .staging_buffer = staging_buffer.handle,
+    });
+
+    const ratios = [_]descriptor.Allocator.PoolSizeRatio{
+        .{ .type = .uniform_buffer_dynamic, .ratio = 0.5 },
+        .{ .type = .combined_image_sampler, .ratio = 0.5 },
+    };
+    var descriptor_allocator = try descriptor.Allocator.init(allocator, device.handle, 10, &ratios);
+    try deletion_queue.append(descriptor_allocator.pool);
+
+    const skybox: Skybox = .{
+        .pipeline_layout = skybox_pipeline_layout,
+        .pipeline = skybox_pipeline,
+        .cubemap = cubemap,
+        .vertex_buffer = skybox_buffer,
+        .descriptor_set = try descriptor_allocator.alloc(device.handle, descriptor_layout),
+    };
 
     const vertex_buffer_info: vk.BufferCreateInfo = .{
         .size = global_vertex_buffer_size,
@@ -343,19 +448,17 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     );
     try deletion_queue.appendBuffer(scene_data_buffer);
 
-    const ratios = [_]descriptor.Allocator.PoolSizeRatio{
-        .{ .type = .uniform_buffer_dynamic, .ratio = 0.5 },
-        .{ .type = .combined_image_sampler, .ratio = 0.5 },
-    };
-    var descriptor_allocator = try descriptor.Allocator.init(allocator, device.handle, 10, &ratios);
-    try deletion_queue.append(descriptor_allocator.pool);
-
     const descriptor_set = try descriptor_allocator.alloc(device.handle, descriptor_layout);
 
     var writer = descriptor.Writer.init(allocator);
     try writer.writeBuffer(0, scene_data_buffer.handle, @sizeOf(GpuSceneData), 0, .uniform_buffer_dynamic);
     try writer.writeImage(1, block_textures.view, .shader_read_only_optimal, nearest_sampler, .combined_image_sampler);
     writer.updateSet(device.handle, descriptor_set);
+
+    writer.clear();
+    try writer.writeBuffer(0, scene_data_buffer.handle, @sizeOf(GpuSceneData), 0, .uniform_buffer_dynamic);
+    try writer.writeImage(1, skybox.cubemap.view, .shader_read_only_optimal, linear_sampler, .combined_image_sampler);
+    writer.updateSet(device.handle, skybox.descriptor_set);
 
     var self: @This() = .{
         .window = window,
@@ -370,20 +473,19 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
         .depth_image = depth_image,
         .framebuffers = framebuffers,
         .render_pass = render_pass,
-        .skybox_render_pass = skybox_render_pass,
         .immediate_context = immediate_context,
         .deletion_queue = deletion_queue,
         .default_pipeline_layout = default_pipeline_layout,
         .default_pipeline = default_pipeline,
-        .skybox_pipeline_layout = skybox_pipeline_layout,
-        .skybox_pipeline = skybox_pipeline,
         .frames = frames,
         .staging_buffer = staging_buffer,
         .world = world,
+        .skybox = skybox,
         .scene_data_buffer = scene_data_buffer,
         .descriptor_set = descriptor_set,
         .block_textures = block_textures,
         .nearest_sampler = nearest_sampler,
+        .linear_sampler = linear_sampler,
         .timer = try std.time.Timer.start(),
     };
 
@@ -581,8 +683,6 @@ fn draw(self: *@This()) !void {
     );
     vkd().cmdBeginRenderPass(cmd, &render_pass_info, .@"inline");
 
-    vkd().cmdBindPipeline(cmd, .graphics, self.default_pipeline);
-
     const viewport: vk.Viewport = .{
         .x = 0,
         .y = 0,
@@ -599,13 +699,20 @@ fn draw(self: *@This()) !void {
     };
     vkd().cmdSetScissor(cmd, 0, 1, @ptrCast(&scissor));
 
+    vkd().cmdBindPipeline(cmd, .graphics, self.skybox.pipeline);
+    vkd().cmdBindDescriptorSets(cmd, .graphics, self.skybox.pipeline_layout, 0, 1, @ptrCast(&self.skybox.descriptor_set), 1, @ptrCast(&uniform_offset));
+    vkd().cmdBindVertexBuffers(cmd, 0, 1, @ptrCast(&self.skybox.vertex_buffer), &[_]vk.DeviceSize{0});
+    vkd().cmdDraw(cmd, 36, 1, 0, 0);
+
+    vkd().cmdBindPipeline(cmd, .graphics, self.default_pipeline);
+    vkd().cmdBindDescriptorSets(cmd, .graphics, self.default_pipeline_layout, 0, 1, @ptrCast(&self.descriptor_set), 1, @ptrCast(&uniform_offset));
+
     var chunk_it = self.world.chunkIterator();
     while (chunk_it.next()) |chunk| {
         if (chunk.state != .loaded or chunk.index_count == 0) continue;
 
         vkd().cmdBindVertexBuffers(cmd, 0, 1, @ptrCast(&chunk.vertex_buffer), &[_]vk.DeviceSize{0});
         vkd().cmdBindIndexBuffer(cmd, chunk.index_buffer, 0, .uint16);
-        vkd().cmdBindDescriptorSets(cmd, .graphics, self.default_pipeline_layout, 0, 1, @ptrCast(&self.descriptor_set), 1, @ptrCast(&uniform_offset));
 
         var model = math.mat.identity(math.Mat4);
         model = math.mat.translate(&model, .{ @floatFromInt(chunk.position[0] * Chunk.width), @floatFromInt(chunk.position[1] * Chunk.height), @floatFromInt(chunk.position[2] * Chunk.depth) });
