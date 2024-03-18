@@ -15,6 +15,7 @@ const Block = @import("Block.zig");
 const Chunk = @import("Chunk.zig");
 const Camera = @import("Camera.zig");
 const World = @import("World.zig");
+const Skybox = @import("Skybox.zig");
 
 const assert = std.debug.assert;
 
@@ -76,14 +77,6 @@ const FrameData = struct {
     swapchain_semaphore: vk.Semaphore,
     render_semaphore: vk.Semaphore,
     render_fence: vk.Fence,
-};
-
-const Skybox = struct {
-    pipeline_layout: vk.PipelineLayout,
-    pipeline: vk.Pipeline,
-    cubemap: AllocatedImage,
-    vertex_buffer: AllocatedBuffer,
-    descriptor_set: vk.DescriptorSet,
 };
 
 window: *Window,
@@ -223,23 +216,6 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     );
     try deletion_queue.append(default_pipeline);
 
-    const skybox_pipeline_layout = try vkd().createPipelineLayout(
-        device.handle,
-        &.{
-            .set_layout_count = 1,
-            .p_set_layouts = @ptrCast(&descriptor_layout),
-        },
-        null,
-    );
-    try deletion_queue.append(skybox_pipeline_layout);
-    const skybox_pipeline = try createSkyboxPipeline(
-        device.handle,
-        skybox_pipeline_layout,
-        render_pass,
-        swapchain.image_format,
-    );
-    try deletion_queue.append(skybox_pipeline);
-
     const staging_buffer = try vk_utils.createBuffer(
         device.handle,
         physical_device.handle,
@@ -251,16 +227,6 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
 
     const block_textures = try texture.loadBlockTextures(&device, staging_buffer, immediate_context);
     try deletion_queue.appendImage(block_textures);
-
-    const cubemap = try texture.loadCubemap(&device, staging_buffer, immediate_context, .{
-        "assets/sky_right.jpg",
-        "assets/sky_left.jpg",
-        "assets/sky_top.jpg",
-        "assets/sky_bottom.jpg",
-        "assets/sky_front.jpg",
-        "assets/sky_back.jpg",
-    });
-    try deletion_queue.appendImage(cubemap);
 
     const nearest_sampler_info = vk_init.samplerCreateInfo(.nearest);
     const nearest_sampler = try vkd().createSampler(device.handle, &nearest_sampler_info, null);
@@ -274,84 +240,6 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     const linear_sampler = try vkd().createSampler(device.handle, &linear_sampler_info, null);
     try deletion_queue.append(linear_sampler);
 
-    const cube = [_]mesh.SkyboxVertex{
-        .{ .pos = .{ -1, 1, -1 } },
-        .{ .pos = .{ -1, -1, -1 } },
-        .{ .pos = .{ 1, -1, -1 } },
-        .{ .pos = .{ 1, -1, -1 } },
-        .{ .pos = .{ 1, 1, -1 } },
-        .{ .pos = .{ -1, 1, -1 } },
-
-        .{ .pos = .{ -1, -1, 1 } },
-        .{ .pos = .{ -1, -1, -1 } },
-        .{ .pos = .{ -1, 1, -1 } },
-        .{ .pos = .{ -1, 1, -1 } },
-        .{ .pos = .{ -1, 1, 1 } },
-        .{ .pos = .{ -1, -1, 1 } },
-
-        .{ .pos = .{ 1, -1, -1 } },
-        .{ .pos = .{ 1, -1, 1 } },
-        .{ .pos = .{ 1, 1, 1 } },
-        .{ .pos = .{ 1, 1, 1 } },
-        .{ .pos = .{ 1, 1, -1 } },
-        .{ .pos = .{ 1, -1, -1 } },
-
-        .{ .pos = .{ -1, -1, 1 } },
-        .{ .pos = .{ -1, 1, 1 } },
-        .{ .pos = .{ 1, 1, 1 } },
-        .{ .pos = .{ 1, 1, 1 } },
-        .{ .pos = .{ 1, -1, 1 } },
-        .{ .pos = .{ -1, -1, 1 } },
-
-        .{ .pos = .{ -1, 1, -1 } },
-        .{ .pos = .{ 1, 1, -1 } },
-        .{ .pos = .{ 1, 1, 1 } },
-        .{ .pos = .{ 1, 1, 1 } },
-        .{ .pos = .{ -1, 1, 1 } },
-        .{ .pos = .{ -1, 1, -1 } },
-
-        .{ .pos = .{ -1, -1, -1 } },
-        .{ .pos = .{ -1, -1, 1 } },
-        .{ .pos = .{ 1, -1, -1 } },
-        .{ .pos = .{ 1, -1, -1 } },
-        .{ .pos = .{ -1, -1, 1 } },
-        .{ .pos = .{ 1, -1, 1 } },
-    };
-
-    const skybox_buffer = try vk_utils.createBuffer(
-        device.handle,
-        physical_device.handle,
-        @sizeOf(@TypeOf(cube)),
-        .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
-        .{ .device_local_bit = true },
-    );
-    try deletion_queue.appendBuffer(skybox_buffer);
-
-    const SkyboxCopy = struct {
-        staging_buffer: vk.Buffer,
-        dst_buffer: vk.Buffer,
-        size: vk.DeviceSize,
-
-        fn recordCommands(ctx: @This(), cmd: vk.CommandBuffer) void {
-            const copy = vk.BufferCopy{ .size = ctx.size, .src_offset = 0, .dst_offset = 0 };
-            vkd().cmdCopyBuffer(cmd, ctx.staging_buffer, ctx.dst_buffer, 1, @ptrCast(&copy));
-        }
-    };
-
-    {
-        const data = try vkd().mapMemory(device.handle, staging_buffer.memory, 0, vk.WHOLE_SIZE, .{});
-        defer vkd().unmapMemory(device.handle, staging_buffer.memory);
-
-        const ptr: [*]mesh.SkyboxVertex = @ptrCast(@alignCast(data));
-        @memcpy(ptr, cube[0..cube.len]);
-    }
-
-    try immediateSubmit(device.handle, device.graphics_queue, immediate_context, SkyboxCopy{
-        .dst_buffer = skybox_buffer.handle,
-        .size = skybox_buffer.size,
-        .staging_buffer = staging_buffer.handle,
-    });
-
     const ratios = [_]descriptor.Allocator.PoolSizeRatio{
         .{ .type = .uniform_buffer_dynamic, .ratio = 0.5 },
         .{ .type = .combined_image_sampler, .ratio = 0.5 },
@@ -359,13 +247,16 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     var descriptor_allocator = try descriptor.Allocator.init(allocator, device.handle, 10, &ratios);
     try deletion_queue.append(descriptor_allocator.pool);
 
-    const skybox: Skybox = .{
-        .pipeline_layout = skybox_pipeline_layout,
-        .pipeline = skybox_pipeline,
-        .cubemap = cubemap,
-        .vertex_buffer = skybox_buffer,
-        .descriptor_set = try descriptor_allocator.alloc(device.handle, descriptor_layout),
-    };
+    const skybox = try Skybox.init(
+        &device,
+        descriptor_layout,
+        render_pass,
+        swapchain.image_format,
+        staging_buffer,
+        immediate_context,
+        &descriptor_allocator,
+        &deletion_queue,
+    );
 
     const vertex_buffer_info: vk.BufferCreateInfo = .{
         .size = global_vertex_buffer_size,
@@ -647,7 +538,7 @@ fn draw(self: *@This()) !void {
     try vkd().resetCommandPool(device, frame.command_pool, .{});
 
     self.scene_data.view = self.camera.viewMatrix();
-    self.scene_data.proj = math.mat.perspective(std.math.degreesToRadians(f32, 70), self.window.aspectRatio(), 10000, 0.1);
+    self.scene_data.proj = math.mat.perspective(std.math.degreesToRadians(f32, 80), self.window.aspectRatio(), 10000, 0.1);
     self.scene_data.view_proj = math.mat.mul(&self.scene_data.proj, &self.scene_data.view);
 
     const alignment = std.mem.alignForward(vk.DeviceSize, @sizeOf(GpuSceneData), self.physical_device.properties.limits.min_uniform_buffer_offset_alignment);
@@ -700,9 +591,7 @@ fn draw(self: *@This()) !void {
     vkd().cmdSetScissor(cmd, 0, 1, @ptrCast(&scissor));
 
     vkd().cmdBindPipeline(cmd, .graphics, self.skybox.pipeline);
-    vkd().cmdBindDescriptorSets(cmd, .graphics, self.skybox.pipeline_layout, 0, 1, @ptrCast(&self.skybox.descriptor_set), 1, @ptrCast(&uniform_offset));
-    vkd().cmdBindVertexBuffers(cmd, 0, 1, @ptrCast(&self.skybox.vertex_buffer), &[_]vk.DeviceSize{0});
-    vkd().cmdDraw(cmd, 36, 1, 0, 0);
+    self.skybox.draw(cmd, uniform_offset);
 
     vkd().cmdBindPipeline(cmd, .graphics, self.default_pipeline);
     vkd().cmdBindDescriptorSets(cmd, .graphics, self.default_pipeline_layout, 0, 1, @ptrCast(&self.descriptor_set), 1, @ptrCast(&uniform_offset));
@@ -1047,38 +936,6 @@ fn createDefaultPipeline(
         .depth_compare_op = .greater_or_equal,
         .color_attachment_format = image_format,
         .depth_attachment_format = depth_format,
-    });
-
-    return builder.build(device);
-}
-
-fn createSkyboxPipeline(
-    device: vk.Device,
-    layout: vk.PipelineLayout,
-    render_pass: vk.RenderPass,
-    image_format: vk.Format,
-) !vk.Pipeline {
-    assert(device != .null_handle);
-    assert(layout != .null_handle);
-    assert(image_format != .undefined);
-
-    const vertex_shader = try vk_utils.createShaderModule(device, &shaders.skybox_vert);
-    defer vkd().destroyShaderModule(device, vertex_shader, null);
-
-    const fragment_shader = try vk_utils.createShaderModule(device, &shaders.skybox_frag);
-    defer vkd().destroyShaderModule(device, fragment_shader, null);
-
-    const builder = pipeline.Builder.init(.{
-        .vertex_input_description = mesh.SkyboxVertex.getInputDescription(),
-        .render_pass = render_pass,
-        .vertex_shader = vertex_shader,
-        .fragment_shader = fragment_shader,
-        .layout = layout,
-        .topology = .triangle_list,
-        .cull_mode = .{},
-        .polygon_mode = .fill,
-        .front_face = .counter_clockwise,
-        .color_attachment_format = image_format,
     });
 
     return builder.build(device);
