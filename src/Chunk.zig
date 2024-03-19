@@ -13,8 +13,8 @@ pub const depth = 16;
 pub const block_count = width * height * depth;
 
 // Worst case is checkerboard pattern
-pub const max_vertices = mesh.max_vertices_per_block * block_count / 2;
-pub const max_indices = mesh.max_indices_per_block * block_count / 2;
+pub const max_vertices = mesh.max_vertices_per_block * block_count / 2 / 2;
+pub const max_indices = mesh.max_indices_per_block * block_count / 2 / 2;
 pub const vertex_buffer_size = @sizeOf(mesh.Vertex) * max_vertices;
 pub const index_buffer_size = @sizeOf(u16) * max_indices;
 

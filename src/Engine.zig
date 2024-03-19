@@ -584,10 +584,7 @@ fn draw(self: *@This()) !void {
     };
     vkd().cmdSetViewport(cmd, 0, 1, @ptrCast(&viewport));
 
-    const scissor: vk.Rect2D = .{
-        .extent = self.swapchain.extent,
-        .offset = .{ .x = 0, .y = 0 },
-    };
+    const scissor: vk.Rect2D = .{ .extent = self.swapchain.extent, .offset = .{ .x = 0, .y = 0 } };
     vkd().cmdSetScissor(cmd, 0, 1, @ptrCast(&scissor));
 
     vkd().cmdBindPipeline(cmd, .graphics, self.skybox.pipeline);

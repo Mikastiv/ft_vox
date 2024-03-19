@@ -3,7 +3,8 @@
 layout (location = 0) in uint data;
 
 layout (location = 0) out vec2 out_uv;
-layout (location = 1) out uint out_index;
+layout (location = 1) out uint out_texture_index;
+layout (location = 2) out uint out_face_index;
 
 layout (set = 0, binding = 0) uniform SceneData {
     mat4 view;
@@ -27,7 +28,9 @@ void main() {
     uint y = (data >> 5) & 0x1F;
     uint z = (data >> 10) & 0x1F;
     uint texture_index = (data >> 15) & 0xFF;
+    uint face_index = (data >> 23) & 0x7;
     gl_Position = scene_data.view_proj * push.model * vec4(x, y, z, 1);
     out_uv = uvs[gl_VertexIndex % 4];
-    out_index = texture_index;
+    out_texture_index = texture_index;
+    out_face_index = face_index;
 }
