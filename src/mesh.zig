@@ -2,6 +2,7 @@ const std = @import("std");
 const vk = @import("vulkan-zig");
 const math = @import("math.zig");
 const Block = @import("Block.zig");
+const Chunk = @import("Chunk.zig");
 
 const assert = std.debug.assert;
 
@@ -27,14 +28,14 @@ pub const PackedVertex = packed struct(u32) {
     face: Face,
     _unused: u6 = 0,
 
-    pub fn init(vec: math.Vec3, texture_index: u8, face: Face) @This() {
-        assert(vec[0] < 17);
-        assert(vec[1] < 17);
-        assert(vec[2] < 17);
+    pub fn init(vec: math.Vec3i, texture_index: u8, face: Face) @This() {
+        assert(vec[0] <= Chunk.width);
+        assert(vec[1] <= Chunk.height);
+        assert(vec[2] <= Chunk.depth);
 
-        const x: u5 = @intFromFloat(vec[0]);
-        const y: u5 = @intFromFloat(vec[1]);
-        const z: u5 = @intFromFloat(vec[2]);
+        const x: u5 = @intCast(vec[0]);
+        const y: u5 = @intCast(vec[1]);
+        const z: u5 = @intCast(vec[2]);
 
         return .{
             .x = x,
@@ -106,9 +107,9 @@ pub const max_indices_per_block = 36;
 pub fn generateCube(
     sides: CubeSides,
     block_id: Block.Id,
+    pos: math.Vec3i,
     out_vertices: *std.ArrayList(Vertex),
     out_indices: *std.ArrayList(u16),
-    pos: math.Vec3,
 ) void {
     const count: u64 = @popCount(sides.toInt());
     assert(count < 7);

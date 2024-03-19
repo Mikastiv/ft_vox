@@ -27,9 +27,17 @@ pub const directions: [6]math.Vec3i = .{
     .{ -1, 0, 0 },
 };
 
-const Blocks = [width * height * depth]Block.Id;
+pub const State = enum {
+    empty,
+    in_use,
+};
+
+const Blocks = [block_count]Block.Id;
+pub const SolidBlocksBitArray = std.bit_set.ArrayBitSet(u64, block_count);
 
 blocks: Blocks = std.mem.zeroes(Blocks),
+solid_blocks: SolidBlocksBitArray,
+state: State,
 
 pub fn generateChunk(self: *@This(), pos: math.Vec3i, heightmap: *const Heightmap.ChunkHeightmap) void {
     for (0..depth) |z| {
@@ -66,13 +74,13 @@ pub fn generateMesh(
                 mesh.generateCube(
                     sides,
                     block_id,
+                    .{
+                        @intCast(x),
+                        @intCast(y),
+                        @intCast(z),
+                    },
                     out_vertices,
                     out_indices,
-                    .{
-                        @floatFromInt(x),
-                        @floatFromInt(y),
-                        @floatFromInt(z),
-                    },
                 );
             }
         }
@@ -131,7 +139,7 @@ fn xyzTo1d(x: usize, y: usize, z: usize) usize {
     return z * width * height + y * width + x;
 }
 
-fn inBounds(pos: math.Vec3i) bool {
+pub fn inBounds(pos: math.Vec3i) bool {
     return pos[0] >= 0 and pos[0] < width and
         pos[1] >= 0 and pos[1] < height and
         pos[2] >= 0 and pos[2] < depth;
