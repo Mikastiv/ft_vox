@@ -3,8 +3,13 @@ const math = @import("math.zig");
 const Heightmap = @import("Heightmap.zig");
 const Block = @import("Block.zig");
 const mesh = @import("mesh.zig");
+const Camera = @import("Camera.zig");
 
 const assert = std.debug.assert;
+
+const loaded_chunk_radius = 48;
+const view_radius = 16;
+const max_generate_per_update = 16;
 
 pub const Chunk = struct {
     pub const width = 16;
@@ -40,13 +45,87 @@ pub const Chunk = struct {
     state: State,
 };
 
-pos_dict: std.AutoHashMap(math.Vec3i, usize),
-chunks: std.MultiArrayList(Chunk),
+const RenderList = struct {
+    queue: std.ArrayList(math.Vec3i),
+    pos_dict: std.AutoArrayHashMap(math.Vec3i, usize),
+};
 
-pub fn generateChunk(self: *@This(), pos: math.Vec3i, heightmap: *const Heightmap.ChunkHeightmap) !void {
+pos_dict: std.AutoArrayHashMap(math.Vec3i, usize),
+generate_queue: std.ArrayList(math.Vec3i),
+visible_list: std.ArrayList(math.Vec3i),
+render_list: RenderList,
+chunks: std.MultiArrayList(Chunk),
+heightmap: Heightmap,
+
+pub fn update(self: *@This(), camera: *const Camera) !void {
+    self.updateGenerateQueue(camera);
+    const generate_count = @min(self.generate_queue.items.len, max_generate_per_update);
+    for (0..generate_count) |i| {
+        const pos = self.generate_queue.items[i];
+        const chunk_heightmap = self.heightmap.get(pos[0], pos[2]);
+        try self.generateChunk(pos, &chunk_heightmap);
+    }
+    try self.generate_queue.replaceRange(0, generate_count, &.{});
+    self.updateVisibleList(camera);
+    self.updateRenderList(camera);
+}
+
+fn updateRenderList(self: *@This(), camera: *const Camera) void {}
+
+fn updateVisibleList(self: *@This(), camera: *const Camera) void {
+    const current_chunk = math.vec.floatToInt(math.Vec3i, camera.pos);
+    loop: for (0..view_radius * 2) |k| {
+        for (0..view_radius * 2) |j| {
+            for (0..view_radius * 2) |i| {
+                const x: i32 = @intCast(i);
+                const y: i32 = @intCast(j);
+                const z: i32 = @intCast(k);
+                const pos: math.Vec3i = .{
+                    current_chunk[0] + x - view_radius,
+                    current_chunk[1] + y - view_radius,
+                    current_chunk[2] + z - view_radius,
+                };
+
+                if (self.pos_dict.get(pos) == null) continue;
+
+                const dist = math.vec.length2(math.vec.sub(pos, current_chunk));
+                if (dist < view_radius * view_radius) {
+                    if (self.visible_list.capacity <= self.visible_list.items.len) break :loop;
+                    self.visible_list.appendAssumeCapacity(pos);
+                }
+            }
+        }
+    }
+}
+
+fn updateGenerateQueue(self: *@This(), camera: *const Camera) void {
+    const current_chunk = math.vec.floatToInt(math.Vec3i, camera.pos);
+    loop: for (0..loaded_chunk_radius * 2) |k| {
+        for (0..loaded_chunk_radius * 2) |j| {
+            for (0..loaded_chunk_radius * 2) |i| {
+                const x: i32 = @intCast(i);
+                const y: i32 = @intCast(j);
+                const z: i32 = @intCast(k);
+                const pos: math.Vec3i = .{
+                    current_chunk[0] + x - loaded_chunk_radius,
+                    current_chunk[1] + y - loaded_chunk_radius,
+                    current_chunk[2] + z - loaded_chunk_radius,
+                };
+                const dist = math.vec.length2(math.vec.sub(pos, current_chunk));
+                if (dist < loaded_chunk_radius * loaded_chunk_radius) {
+                    if (self.generate_queue.capacity <= self.generate_queue.items.len) break :loop;
+                    self.generate_queue.appendAssumeCapacity(pos);
+                }
+            }
+        }
+    }
+}
+
+fn generateChunk(self: *@This(), pos: math.Vec3i, heightmap: *const Heightmap.ChunkHeightmap) !void {
     assert(self.pos_dict.get(pos) == null);
 
     const chunk_idx = self.getFreeSlot() orelse return error.NoChunkSpaceLeft;
+    try self.pos_dict.put(pos, chunk_idx);
 
     for (0..Chunk.depth) |z| {
         for (0..Chunk.height) |y| {
@@ -68,7 +147,7 @@ pub fn generateChunk(self: *@This(), pos: math.Vec3i, heightmap: *const Heightma
     }
 }
 
-pub fn generateMesh(
+fn generateMesh(
     self: *const @This(),
     pos: math.Vec3i,
     out_vertices: *std.ArrayList(mesh.Vertex),
