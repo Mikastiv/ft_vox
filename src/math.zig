@@ -58,7 +58,7 @@ pub const Frustum = struct {
 
         const near_top_left = vec.sub(vec.add(forward_near, up_height_near), right_width_near);
         const near_top_right = vec.add(vec.add(forward_near, up_height_near), right_width_near);
-        // const near_bottom_left = vec.sub(vec.sub(forward_near, up_height_near), right_width_near);
+        const near_bottom_left = vec.sub(vec.sub(forward_near, up_height_near), right_width_near);
         // const near_bottom_right = vec.add(vec.sub(forward_near, up_height_near), right_width_near);
 
         const far_top_left = vec.sub(vec.add(forward_far, up_height_far), right_width_far);
@@ -78,7 +78,7 @@ pub const Frustum = struct {
         const top_up = vec.sub(far_top_right, far_top_left);
         const top_normal = vec.normalize(vec.cross(top_forward, top_up));
 
-        const bottom_forward = vec.sub(far_bottom_right, far_bottom_left);
+        const bottom_forward = vec.sub(far_bottom_left, near_bottom_left);
         const bottom_up = top_up;
         const bottom_normal = vec.normalize(vec.cross(bottom_up, bottom_forward));
 

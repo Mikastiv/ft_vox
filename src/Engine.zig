@@ -467,19 +467,19 @@ fn fixedUpdate(self: *@This()) !void {
         @intFromFloat(self.camera.pos[2] / Chunk.depth),
     };
 
-    const frustum = math.Frustum.init(std.math.degreesToRadians(f32, 80), self.window.aspectRatio(), 0.1, 10000, self.camera.pos, self.camera.dir, self.camera.up, self.camera.right);
-    var chunk_it = self.world.chunkIterator();
-    while (chunk_it.next()) |chunk| {
-        const middle: math.Vec3i = .{ chunk.position[0] * Chunk.width, chunk.position[1] * Chunk.height, chunk.position[2] * Chunk.depth };
-        if (!frustum.isPointInside(math.vec.intToFloat(f32, middle))) {
-            try self.world.addChunk(chunk.position);
-        }
-    }
-
     if (current_chunk[0] != prev_chunk[0] or
         current_chunk[1] != prev_chunk[1] or
         current_chunk[2] != prev_chunk[2])
     {
+        const frustum = math.Frustum.init(std.math.degreesToRadians(f32, 80), self.window.aspectRatio(), 0.1, 10000, self.camera.pos, self.camera.dir, self.camera.up, self.camera.right);
+        var chunk_it = self.world.chunkIterator();
+        while (chunk_it.next()) |chunk| {
+            const middle: math.Vec3i = .{ chunk.position[0] * Chunk.width, chunk.position[1] * Chunk.height, chunk.position[2] * Chunk.depth };
+            if (!frustum.isPointInside(math.vec.intToFloat(f32, middle))) {
+                self.world.removeChunk(chunk.position);
+            }
+        }
+
         for (0..World.chunk_radius) |j| {
             for (0..World.chunk_radius * 2) |i| {
                 for (0..World.chunk_radius * 2) |k| {
