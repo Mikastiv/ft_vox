@@ -8,8 +8,9 @@ const Camera = @import("Camera.zig");
 const assert = std.debug.assert;
 
 const loaded_chunk_radius = 48;
-const view_radius = 16;
+const view_radius = 8;
 const max_generate_per_update = 16;
+const max_upload_per_update = 2;
 
 pub const Chunk = struct {
     pub const width = 16;
@@ -34,7 +35,8 @@ pub const Chunk = struct {
 
     pub const State = enum {
         empty,
-        in_use,
+        in_queue,
+        uploaded,
     };
 
     pub const SolidBlocksBitArray = std.bit_set.ArrayBitSet(u64, block_count);
@@ -53,12 +55,14 @@ const RenderList = struct {
 pos_dict: std.AutoArrayHashMap(math.Vec3i, usize),
 generate_queue: std.ArrayList(math.Vec3i),
 visible_list: std.ArrayList(math.Vec3i),
+upload_queue: std.ArrayList(math.Vec3i),
 render_list: RenderList,
 chunks: std.MultiArrayList(Chunk),
 heightmap: Heightmap,
 
 pub fn update(self: *@This(), camera: *const Camera) !void {
     self.updateGenerateQueue(camera);
+
     const generate_count = @min(self.generate_queue.items.len, max_generate_per_update);
     for (0..generate_count) |i| {
         const pos = self.generate_queue.items[i];
@@ -66,8 +70,16 @@ pub fn update(self: *@This(), camera: *const Camera) !void {
         try self.generateChunk(pos, &chunk_heightmap);
     }
     try self.generate_queue.replaceRange(0, generate_count, &.{});
+
     self.updateVisibleList(camera);
     self.updateRenderList(camera);
+    self.updateUploadQueue();
+
+    const upload_count = @min(max_upload_per_update, self.upload_queue.items.len);
+    for (0..upload_count) |i| {
+        // upload
+    }
+    try self.upload_queue.replaceRange(0, upload_count, &.{});
 }
 
 fn updateRenderList(self: *@This(), camera: *const Camera) void {}

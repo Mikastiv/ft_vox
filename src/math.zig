@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const assert = std.debug.assert;
+
 // Math library for Vulkan
 
 pub fn Vec(comptime T: type, comptime size: usize) type {
@@ -15,6 +17,98 @@ pub const Vec4 = Vec(f32, 4);
 pub const Mat2 = [2]Vec2;
 pub const Mat3 = [3]Vec3;
 pub const Mat4 = [4]Vec4;
+
+pub const Plane = struct {
+    normal: Vec3,
+    d: f32,
+
+    pub fn init(normal: Vec3, point: Vec3) @This() {
+        const n = vec.normalize(normal);
+        const d = vec.dot(vec.neg(n), point);
+        return .{
+            .normal = n,
+            .d = d,
+        };
+    }
+
+    pub fn pointDistance(self: @This(), point: Vec3) f32 {
+        return vec.dot(self.normal, point) + self.d;
+    }
+};
+
+pub const Frustum = struct {
+    pub const Pos = enum(u8) { top = 0, bottom, left, right, near, far };
+    const pos_count = @typeInfo(Pos).Enum.fields.len;
+
+    planes: [pos_count]Plane,
+
+    pub fn init(fov: f32, aspect: f32, near: f32, far: f32, pos: Vec3, forward: Vec3, up: Vec3, right: Vec3) @This() {
+        const htan = @tan(fov / 2);
+        const half_height_near = htan * near;
+        const half_width_near = half_height_near * aspect;
+        const half_height_far = htan * far;
+        const half_width_far = half_height_far * aspect;
+
+        const forward_near = vec.add(pos, vec.mul(forward, near));
+        const forward_far = vec.add(pos, vec.mul(forward, far));
+        const up_height_near = vec.mul(up, half_height_near);
+        const right_width_near = vec.mul(right, half_width_near);
+        const up_height_far = vec.mul(up, half_height_far);
+        const right_width_far = vec.mul(right, half_width_far);
+
+        const near_top_left = vec.sub(vec.add(forward_near, up_height_near), right_width_near);
+        const near_top_right = vec.add(vec.add(forward_near, up_height_near), right_width_near);
+        // const near_bottom_left = vec.sub(vec.sub(forward_near, up_height_near), right_width_near);
+        // const near_bottom_right = vec.add(vec.sub(forward_near, up_height_near), right_width_near);
+
+        const far_top_left = vec.sub(vec.add(forward_far, up_height_far), right_width_far);
+        const far_top_right = vec.add(vec.add(forward_far, up_height_far), right_width_far);
+        const far_bottom_left = vec.sub(vec.sub(forward_far, up_height_far), right_width_far);
+        const far_bottom_right = vec.add(vec.sub(forward_far, up_height_far), right_width_far);
+
+        const left_forward = vec.sub(far_top_left, near_top_left);
+        const left_up = vec.sub(far_top_left, far_bottom_left);
+        const left_normal = vec.normalize(vec.cross(left_forward, left_up));
+
+        const right_forward = vec.sub(far_top_right, near_top_right);
+        const right_up = vec.sub(far_top_right, far_bottom_right);
+        const right_normal = vec.normalize(vec.cross(right_up, right_forward));
+
+        const top_forward = left_forward;
+        const top_up = vec.sub(far_top_right, far_top_left);
+        const top_normal = vec.normalize(vec.cross(top_forward, top_up));
+
+        const bottom_forward = vec.sub(far_bottom_right, far_bottom_left);
+        const bottom_up = top_up;
+        const bottom_normal = vec.normalize(vec.cross(bottom_up, bottom_forward));
+
+        const near_plane = Plane.init(forward, vec.add(pos, vec.mul(forward, near)));
+        const far_plane = Plane.init(vec.neg(forward), vec.add(pos, vec.mul(forward, far)));
+        const left_plane = Plane.init(left_normal, far_top_left);
+        const right_plane = Plane.init(right_normal, far_top_right);
+        const top_plane = Plane.init(top_normal, far_top_left);
+        const bottom_plane = Plane.init(bottom_normal, far_bottom_left);
+
+        var planes: [pos_count]Plane = undefined;
+        planes[@intFromEnum(Pos.top)] = top_plane;
+        planes[@intFromEnum(Pos.bottom)] = bottom_plane;
+        planes[@intFromEnum(Pos.left)] = left_plane;
+        planes[@intFromEnum(Pos.right)] = right_plane;
+        planes[@intFromEnum(Pos.near)] = near_plane;
+        planes[@intFromEnum(Pos.far)] = far_plane;
+
+        return .{
+            .planes = planes,
+        };
+    }
+
+    pub fn isPointInside(self: *const @This(), point: Vec3) bool {
+        for (&self.planes) |plane| {
+            if (plane.pointDistance(point) < 0) return false;
+        }
+        return true;
+    }
+};
 
 fn unsupportedType(comptime T: type) void {
     @compileError("unsupported type: " ++ @typeName(T));
