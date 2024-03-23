@@ -10,11 +10,11 @@ layout (set = 0, binding = 1) uniform sampler2DArray block_texture;
 
 const float light_factors[6] = float[](
     0.95, // front
-    0.60, // back
+    0.30, // back
     0.85, // east
-    0.65, // west
+    0.55, // west
     0.95, // north
-    0.5 // south
+    0.30 // south
 );
 
 void main() {
@@ -22,5 +22,5 @@ void main() {
     pixel = vec4(pixel.rgb * light_factors[face_index], 1);
 
     const float gamma = 2.2;
-    frag_color = pow(pixel, vec4(1.0 / gamma));
+    frag_color = pow(pixel * 0.7, vec4(1.0 / gamma));
 }

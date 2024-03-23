@@ -20,19 +20,19 @@ pub const Mat4 = [4]Vec4;
 
 pub const Plane = struct {
     normal: Vec3,
-    d: f32,
+    point: Vec3,
 
     pub fn init(normal: Vec3, point: Vec3) @This() {
         const n = vec.normalize(normal);
-        const d = vec.dot(vec.neg(n), point);
         return .{
             .normal = n,
-            .d = d,
+            .point = point,
         };
     }
 
     pub fn pointDistance(self: @This(), point: Vec3) f32 {
-        return vec.dot(self.normal, point) + self.d;
+        const v = vec.sub(point, self.point);
+        return vec.dot(v, self.normal);
     }
 };
 
@@ -64,14 +64,14 @@ pub const Frustum = struct {
         const far_top_left = vec.sub(vec.add(forward_far, up_height_far), right_width_far);
         const far_top_right = vec.add(vec.add(forward_far, up_height_far), right_width_far);
         const far_bottom_left = vec.sub(vec.sub(forward_far, up_height_far), right_width_far);
-        const far_bottom_right = vec.add(vec.sub(forward_far, up_height_far), right_width_far);
+        // const far_bottom_right = vec.add(vec.sub(forward_far, up_height_far), right_width_far);
 
         const left_forward = vec.sub(far_top_left, near_top_left);
         const left_up = vec.sub(far_top_left, far_bottom_left);
         const left_normal = vec.normalize(vec.cross(left_forward, left_up));
 
         const right_forward = vec.sub(far_top_right, near_top_right);
-        const right_up = vec.sub(far_top_right, far_bottom_right);
+        const right_up = left_up;
         const right_normal = vec.normalize(vec.cross(right_up, right_forward));
 
         const top_forward = left_forward;
@@ -82,8 +82,8 @@ pub const Frustum = struct {
         const bottom_up = top_up;
         const bottom_normal = vec.normalize(vec.cross(bottom_up, bottom_forward));
 
-        const near_plane = Plane.init(forward, vec.add(pos, vec.mul(forward, near)));
-        const far_plane = Plane.init(vec.neg(forward), vec.add(pos, vec.mul(forward, far)));
+        const near_plane = Plane.init(forward, forward_near);
+        const far_plane = Plane.init(vec.neg(forward), forward_far);
         const left_plane = Plane.init(left_normal, far_top_left);
         const right_plane = Plane.init(right_normal, far_top_right);
         const top_plane = Plane.init(top_normal, far_top_left);
