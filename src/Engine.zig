@@ -467,7 +467,7 @@ fn fixedUpdate(self: *@This()) !void {
         @intFromFloat(self.camera.pos[2] / Chunk.depth),
     };
     if (!math.vec.eql(curr_dir, self.prev_dir) or !math.vec.eql(curr_pos, prev_pos)) {
-        const frustum = math.Frustum.init(std.math.degreesToRadians(f32, 100), self.window.aspectRatio(), 0.1, 10000, self.camera.pos, self.camera.dir, self.camera.up, self.camera.right);
+        const frustum = math.Frustum.init(std.math.degreesToRadians(100), self.window.aspectRatio(), 0.1, 10000, self.camera.pos, self.camera.dir, self.camera.up, self.camera.right);
         var chunk_it = self.world.chunkIterator();
         while (chunk_it.next()) |chunk| {
             var corners: [8]math.Vec3i = undefined;
@@ -565,7 +565,7 @@ fn draw(self: *@This()) !void {
     try vkd().resetCommandPool(device, frame.command_pool, .{});
 
     self.scene_data.view = self.camera.viewMatrix();
-    self.scene_data.proj = math.mat.perspective(std.math.degreesToRadians(f32, 80), self.window.aspectRatio(), 10000, 0.1);
+    self.scene_data.proj = math.mat.perspective(std.math.degreesToRadians(80), self.window.aspectRatio(), 10000, 0.1);
     self.scene_data.view_proj = math.mat.mul(&self.scene_data.proj, &self.scene_data.view);
 
     const alignment = std.mem.alignForward(vk.DeviceSize, @sizeOf(GpuSceneData), self.physical_device.properties.limits.min_uniform_buffer_offset_alignment);

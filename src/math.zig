@@ -20,19 +20,19 @@ pub const Mat4 = [4]Vec4;
 
 pub const Plane = struct {
     normal: Vec3,
-    point: Vec3,
+    d: f32,
 
     pub fn init(normal: Vec3, point: Vec3) @This() {
         const n = vec.normalize(normal);
+        const d = vec.dot(vec.neg(n), point);
         return .{
             .normal = n,
-            .point = point,
+            .d = d,
         };
     }
 
     pub fn pointDistance(self: @This(), point: Vec3) f32 {
-        const v = vec.sub(point, self.point);
-        return vec.dot(v, self.normal);
+        return vec.dot(self.normal, point) + self.d;
     }
 };
 

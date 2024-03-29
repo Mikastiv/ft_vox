@@ -31,8 +31,8 @@ pub fn update(self: *@This(), offset: math.Vec2) void {
     if (self.pitch > 89) self.pitch = 89;
     if (self.pitch < -89) self.pitch = -89;
 
-    const pitch = std.math.degreesToRadians(f32, self.pitch);
-    const yaw = std.math.degreesToRadians(f32, self.yaw);
+    const pitch = std.math.degreesToRadians(self.pitch);
+    const yaw = std.math.degreesToRadians(self.yaw);
 
     const dir = math.Vec3{
         @cos(yaw) * @cos(pitch),

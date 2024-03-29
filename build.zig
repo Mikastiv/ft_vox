@@ -23,6 +23,8 @@ pub fn build(b: *std.Build) void {
         .optimize = .ReleaseFast,
     }).artifact("glfw");
 
+    const mksv = b.dependency("mksv", .{});
+
     const vulkan_lib = if (target.result.os.tag == .windows) "vulkan-1" else "vulkan";
     const vulkan_sdk = getVulkanSdkPath(b);
 
@@ -80,6 +82,7 @@ pub fn build(b: *std.Build) void {
     exe.addCSourceFile(.{ .file = stb_image });
     exe.root_module.addImport("vk-kickstart", vk_kickstart.module("vk-kickstart"));
     exe.root_module.addImport("vulkan-zig", vkzig.module("vulkan-zig"));
+    exe.root_module.addImport("mksv", mksv.module("mksv"));
     exe.root_module.addImport("shaders", shaders.getModule());
 
     b.installArtifact(exe);

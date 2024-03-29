@@ -5,8 +5,10 @@ const c = @import("c.zig");
 const dispatch = @import("vk_dispatch.zig");
 const noise = @import("noise.zig");
 
-pub const vulkan_dispatch = struct {
-    pub const device = dispatch.device;
+pub const vkk_options = struct {
+    pub const vulkan_dispatch = struct {
+        pub const device = dispatch.device;
+    };
 };
 
 const memory_size = 1024 * 1024 * 100;
