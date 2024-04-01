@@ -1,5 +1,5 @@
 const std = @import("std");
-const math = @import("math.zig");
+const math = @import("mksv").math;
 
 fn randomGradient(ix: i32, iy: i32) math.Vec2 {
     // No precomputed gradients mean this works for any number of grid coordinates

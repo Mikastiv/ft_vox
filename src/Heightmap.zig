@@ -1,6 +1,6 @@
 const std = @import("std");
 const noise = @import("noise.zig");
-const math = @import("math.zig");
+const math = @import("mksv").math;
 const Chunk = @import("Chunk.zig");
 
 const assert = std.debug.assert;
@@ -65,7 +65,7 @@ fn getEmptySlot(self: *@This()) ?u16 {
 }
 
 fn generate(pos: math.Vec2i, slot: *ChunkHeightmap) void {
-    const pos_f = math.vec.intToFloat(f32, pos);
+    const pos_f = math.vec.cast(f32, pos);
     for (0..chunk_heightmap_size) |i| {
         var freq: f32 = frequency;
         var amp: f32 = amplitude;

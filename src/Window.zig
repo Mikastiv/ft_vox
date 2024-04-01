@@ -1,7 +1,7 @@
 const std = @import("std");
 const c = @import("c.zig");
 const vk = @import("vulkan-zig");
-const math = @import("math.zig");
+const math = @import("mksv").math;
 
 const assert = std.debug.assert;
 
@@ -140,7 +140,7 @@ fn cursorCallback(window: ?*c.GLFWwindow, xpos: f64, ypos: f64) callconv(.C) voi
     if (!self.mouse_captured) return;
 
     const pos: math.Vec2 = .{ @floatCast(xpos), @floatCast(ypos) };
-    self.mouse.delta = math.vec.sub(pos, self.mouse.pos);
+    self.mouse.delta = pos - self.mouse.pos;
     self.mouse.delta[1] *= -1;
     self.mouse.delta[0] = std.math.clamp(self.mouse.delta[0], -150, 150);
     self.mouse.delta[1] = std.math.clamp(self.mouse.delta[1], -150, 150);

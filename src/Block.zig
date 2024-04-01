@@ -1,5 +1,5 @@
 const std = @import("std");
-const math = @import("math.zig");
+const math = @import("mksv").math;
 
 const assert = std.debug.assert;
 

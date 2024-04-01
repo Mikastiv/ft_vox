@@ -1,7 +1,7 @@
 const std = @import("std");
 const mesh = @import("mesh.zig");
 const Block = @import("Block.zig");
-const math = @import("math.zig");
+const math = @import("mksv").math;
 const vk = @import("vulkan-zig");
 const Heightmap = @import("Heightmap.zig");
 
@@ -106,7 +106,7 @@ pub fn getBlockSides(self: *const @This(), x: usize, y: usize, z: usize, neighbo
     for (0..6) |i| {
         const bit = bits[i];
         const direction = directions[i];
-        const neighbor = math.vec.add(pos, direction);
+        const neighbor = pos + direction;
         if (inBounds(neighbor)) {
             const idx = xyzTo1d(@intCast(neighbor[0]), @intCast(neighbor[1]), @intCast(neighbor[2]));
             if (self.blocks[idx] == .air)

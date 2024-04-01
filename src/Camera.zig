@@ -1,5 +1,5 @@
 const std = @import("std");
-const math = @import("math.zig");
+const math = @import("mksv").math;
 
 pos: math.Vec3,
 right: math.Vec3,
@@ -41,7 +41,7 @@ pub fn update(self: *@This(), offset: math.Vec2) void {
     };
 
     self.dir = math.vec.normalize(dir);
-    self.smooth_dir = math.vec.add(math.vec.mul(self.dir, 0.15), math.vec.mul(self.smooth_dir, 0.85));
+    self.smooth_dir = math.vec.mul(self.dir, 0.15) + math.vec.mul(self.smooth_dir, 0.85);
     self.right = math.vec.normalize(math.vec.cross(self.smooth_dir, .{ 0, 1, 0 }));
     self.up = math.vec.cross(self.right, self.smooth_dir);
 }

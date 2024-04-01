@@ -5,13 +5,13 @@ const vkk = @import("vk-kickstart");
 const Engine = @import("Engine.zig");
 const vk_utils = @import("vk_utils.zig");
 const mesh = @import("mesh.zig");
-const math = @import("math.zig");
+const math = @import("mksv").math;
 const Heightmap = @import("Heightmap.zig");
 
 const assert = std.debug.assert;
 const vkd = vkk.dispatch.vkd;
 
-pub const chunk_radius = 9;
+pub const chunk_radius = 8;
 pub const max_loaded_chunks = chunk_radius * chunk_radius * chunk_radius * chunk_radius;
 pub const max_uploaded_chunks = max_loaded_chunks * 100 * 100;
 
@@ -103,7 +103,7 @@ pub fn addChunk(self: *@This(), pos: math.Vec3i) !void {
     try self.chunk_mapping.put(pos, idx);
     try self.upload_queue.append(pos);
     outer: for (0..Chunk.directions.len) |i| {
-        const neighbor_idx = self.chunk_mapping.get(math.vec.add(pos, Chunk.directions[i])) orelse continue;
+        const neighbor_idx = self.chunk_mapping.get(pos + Chunk.directions[i]) orelse continue;
         for (self.upload_queue.constSlice()) |p| {
             if (math.vec.eql(p, self.positions[neighbor_idx])) {
                 continue :outer;
@@ -145,7 +145,7 @@ fn uploadChunk(self: *@This(), device: vk.Device, pos: math.Vec3i, cmd: vk.Comma
     self.index_upload_buffer.clearRetainingCapacity();
     var neighbor_chunks: [Chunk.directions.len]?*const Chunk = undefined;
     for (0..Chunk.directions.len) |i| {
-        const neighbor_idx = self.chunk_mapping.get(math.vec.add(pos, Chunk.directions[i]));
+        const neighbor_idx = self.chunk_mapping.get(pos + Chunk.directions[i]);
         if (neighbor_idx) |n_idx| {
             const ptr = &self.chunks[n_idx];
             const neighbor_pos = self.positions[n_idx];

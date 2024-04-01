@@ -1,6 +1,6 @@
 const std = @import("std");
 const vk = @import("vulkan-zig");
-const math = @import("math.zig");
+const math = @import("mksv").math;
 const Block = @import("Block.zig");
 const Chunk = @import("Chunk.zig");
 
@@ -121,55 +121,55 @@ pub fn generateCube(
     if (sides.contains(CubeSides.front_side)) {
         appendIndices(@intCast(out_vertices.items.len), out_indices);
         out_vertices.appendSliceAssumeCapacity(&.{
-            .{ .data = PackedVertex.init(math.vec.add(pos, .{ 0, 1, 1 }), block.front, .front) },
-            .{ .data = PackedVertex.init(math.vec.add(pos, .{ 0, 0, 1 }), block.front, .front) },
-            .{ .data = PackedVertex.init(math.vec.add(pos, .{ 1, 0, 1 }), block.front, .front) },
-            .{ .data = PackedVertex.init(math.vec.add(pos, .{ 1, 1, 1 }), block.front, .front) },
+            .{ .data = PackedVertex.init(pos + math.Vec3i{ 0, 1, 1 }, block.front, .front) },
+            .{ .data = PackedVertex.init(pos + math.Vec3i{ 0, 0, 1 }, block.front, .front) },
+            .{ .data = PackedVertex.init(pos + math.Vec3i{ 1, 0, 1 }, block.front, .front) },
+            .{ .data = PackedVertex.init(pos + math.Vec3i{ 1, 1, 1 }, block.front, .front) },
         });
     }
     if (sides.contains(CubeSides.back_side)) {
         appendIndices(@intCast(out_vertices.items.len), out_indices);
         out_vertices.appendSliceAssumeCapacity(&.{
-            .{ .data = PackedVertex.init(math.vec.add(pos, .{ 1, 1, 0 }), block.back, .back) },
-            .{ .data = PackedVertex.init(math.vec.add(pos, .{ 1, 0, 0 }), block.back, .back) },
-            .{ .data = PackedVertex.init(math.vec.add(pos, .{ 0, 0, 0 }), block.back, .back) },
-            .{ .data = PackedVertex.init(math.vec.add(pos, .{ 0, 1, 0 }), block.back, .back) },
+            .{ .data = PackedVertex.init(pos + math.Vec3i{ 1, 1, 0 }, block.back, .back) },
+            .{ .data = PackedVertex.init(pos + math.Vec3i{ 1, 0, 0 }, block.back, .back) },
+            .{ .data = PackedVertex.init(pos + math.Vec3i{ 0, 0, 0 }, block.back, .back) },
+            .{ .data = PackedVertex.init(pos + math.Vec3i{ 0, 1, 0 }, block.back, .back) },
         });
     }
     if (sides.contains(CubeSides.west_side)) {
         appendIndices(@intCast(out_vertices.items.len), out_indices);
         out_vertices.appendSliceAssumeCapacity(&.{
-            .{ .data = PackedVertex.init(math.vec.add(pos, .{ 0, 1, 0 }), block.west, .west) },
-            .{ .data = PackedVertex.init(math.vec.add(pos, .{ 0, 0, 0 }), block.west, .west) },
-            .{ .data = PackedVertex.init(math.vec.add(pos, .{ 0, 0, 1 }), block.west, .west) },
-            .{ .data = PackedVertex.init(math.vec.add(pos, .{ 0, 1, 1 }), block.west, .west) },
+            .{ .data = PackedVertex.init(pos + math.Vec3i{ 0, 1, 0 }, block.west, .west) },
+            .{ .data = PackedVertex.init(pos + math.Vec3i{ 0, 0, 0 }, block.west, .west) },
+            .{ .data = PackedVertex.init(pos + math.Vec3i{ 0, 0, 1 }, block.west, .west) },
+            .{ .data = PackedVertex.init(pos + math.Vec3i{ 0, 1, 1 }, block.west, .west) },
         });
     }
     if (sides.contains(CubeSides.east_side)) {
         appendIndices(@intCast(out_vertices.items.len), out_indices);
         out_vertices.appendSliceAssumeCapacity(&.{
-            .{ .data = PackedVertex.init(math.vec.add(pos, .{ 1, 1, 1 }), block.east, .east) },
-            .{ .data = PackedVertex.init(math.vec.add(pos, .{ 1, 0, 1 }), block.east, .east) },
-            .{ .data = PackedVertex.init(math.vec.add(pos, .{ 1, 0, 0 }), block.east, .east) },
-            .{ .data = PackedVertex.init(math.vec.add(pos, .{ 1, 1, 0 }), block.east, .east) },
+            .{ .data = PackedVertex.init(pos + math.Vec3i{ 1, 1, 1 }, block.east, .east) },
+            .{ .data = PackedVertex.init(pos + math.Vec3i{ 1, 0, 1 }, block.east, .east) },
+            .{ .data = PackedVertex.init(pos + math.Vec3i{ 1, 0, 0 }, block.east, .east) },
+            .{ .data = PackedVertex.init(pos + math.Vec3i{ 1, 1, 0 }, block.east, .east) },
         });
     }
     if (sides.contains(CubeSides.south_side)) {
         appendIndices(@intCast(out_vertices.items.len), out_indices);
         out_vertices.appendSliceAssumeCapacity(&.{
-            .{ .data = PackedVertex.init(math.vec.add(pos, .{ 0, 0, 1 }), block.south, .south) },
-            .{ .data = PackedVertex.init(math.vec.add(pos, .{ 0, 0, 0 }), block.south, .south) },
-            .{ .data = PackedVertex.init(math.vec.add(pos, .{ 1, 0, 0 }), block.south, .south) },
-            .{ .data = PackedVertex.init(math.vec.add(pos, .{ 1, 0, 1 }), block.south, .south) },
+            .{ .data = PackedVertex.init(pos + math.Vec3i{ 0, 0, 1 }, block.south, .south) },
+            .{ .data = PackedVertex.init(pos + math.Vec3i{ 0, 0, 0 }, block.south, .south) },
+            .{ .data = PackedVertex.init(pos + math.Vec3i{ 1, 0, 0 }, block.south, .south) },
+            .{ .data = PackedVertex.init(pos + math.Vec3i{ 1, 0, 1 }, block.south, .south) },
         });
     }
     if (sides.contains(CubeSides.north_side)) {
         appendIndices(@intCast(out_vertices.items.len), out_indices);
         out_vertices.appendSliceAssumeCapacity(&.{
-            .{ .data = PackedVertex.init(math.vec.add(pos, .{ 0, 1, 0 }), block.north, .north) },
-            .{ .data = PackedVertex.init(math.vec.add(pos, .{ 0, 1, 1 }), block.north, .north) },
-            .{ .data = PackedVertex.init(math.vec.add(pos, .{ 1, 1, 1 }), block.north, .north) },
-            .{ .data = PackedVertex.init(math.vec.add(pos, .{ 1, 1, 0 }), block.north, .north) },
+            .{ .data = PackedVertex.init(pos + math.Vec3i{ 0, 1, 0 }, block.north, .north) },
+            .{ .data = PackedVertex.init(pos + math.Vec3i{ 0, 1, 1 }, block.north, .north) },
+            .{ .data = PackedVertex.init(pos + math.Vec3i{ 1, 1, 1 }, block.north, .north) },
+            .{ .data = PackedVertex.init(pos + math.Vec3i{ 1, 1, 0 }, block.north, .north) },
         });
     }
 }

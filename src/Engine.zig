@@ -8,7 +8,7 @@ const vk_utils = @import("vk_utils.zig");
 const pipeline = @import("pipeline.zig");
 const shaders = @import("shaders");
 const mesh = @import("mesh.zig");
-const math = @import("math.zig");
+const math = @import("mksv").math;
 const descriptor = @import("descriptor.zig");
 const texture = @import("texture.zig");
 const Block = @import("Block.zig");
@@ -452,12 +452,12 @@ fn fixedUpdate(self: *@This()) !void {
     const up = math.vec.mul(self.camera.up, speed);
 
     const prev_pos = self.camera.pos;
-    if (self.window.keyboard.keys[c.GLFW_KEY_W].down) self.camera.pos = math.vec.add(self.camera.pos, forward);
-    if (self.window.keyboard.keys[c.GLFW_KEY_S].down) self.camera.pos = math.vec.sub(self.camera.pos, forward);
-    if (self.window.keyboard.keys[c.GLFW_KEY_D].down) self.camera.pos = math.vec.add(self.camera.pos, right);
-    if (self.window.keyboard.keys[c.GLFW_KEY_A].down) self.camera.pos = math.vec.sub(self.camera.pos, right);
-    if (self.window.keyboard.keys[c.GLFW_KEY_SPACE].down) self.camera.pos = math.vec.add(self.camera.pos, up);
-    if (self.window.keyboard.keys[c.GLFW_KEY_LEFT_SHIFT].down) self.camera.pos = math.vec.sub(self.camera.pos, up);
+    if (self.window.keyboard.keys[c.GLFW_KEY_W].down) self.camera.pos = self.camera.pos + forward;
+    if (self.window.keyboard.keys[c.GLFW_KEY_S].down) self.camera.pos = self.camera.pos - forward;
+    if (self.window.keyboard.keys[c.GLFW_KEY_D].down) self.camera.pos = self.camera.pos + right;
+    if (self.window.keyboard.keys[c.GLFW_KEY_A].down) self.camera.pos = self.camera.pos - right;
+    if (self.window.keyboard.keys[c.GLFW_KEY_SPACE].down) self.camera.pos = self.camera.pos + up;
+    if (self.window.keyboard.keys[c.GLFW_KEY_LEFT_SHIFT].down) self.camera.pos = self.camera.pos - up;
 
     const curr_dir = self.camera.dir;
     const curr_pos = self.camera.pos;
@@ -467,21 +467,21 @@ fn fixedUpdate(self: *@This()) !void {
         @intFromFloat(self.camera.pos[2] / Chunk.depth),
     };
     if (!math.vec.eql(curr_dir, self.prev_dir) or !math.vec.eql(curr_pos, prev_pos)) {
-        const frustum = math.Frustum.init(std.math.degreesToRadians(100), self.window.aspectRatio(), 0.1, 10000, self.camera.pos, self.camera.dir, self.camera.up, self.camera.right);
+        const frustum = math.Frustum.init(std.math.degreesToRadians(100), self.window.aspectRatio(), 0.1, 10000, self.camera.pos, self.camera.dir);
         var chunk_it = self.world.chunkIterator();
         while (chunk_it.next()) |chunk| {
             var corners: [8]math.Vec3i = undefined;
             corners[0] = .{ chunk.position[0] * Chunk.width, chunk.position[1] * Chunk.height, chunk.position[2] * Chunk.depth };
-            corners[1] = math.vec.add(corners[0], .{ Chunk.width, 0, 0 });
-            corners[2] = math.vec.add(corners[0], .{ Chunk.width, 0, Chunk.depth });
-            corners[3] = math.vec.add(corners[0], .{ 0, 0, Chunk.depth });
-            corners[4] = math.vec.add(corners[0], .{ 0, Chunk.height, 0 });
-            corners[5] = math.vec.add(corners[4], .{ Chunk.width, 0, 0 });
-            corners[6] = math.vec.add(corners[4], .{ Chunk.width, 0, Chunk.depth });
-            corners[7] = math.vec.add(corners[4], .{ 0, 0, Chunk.depth });
+            corners[1] = corners[0] + math.Vec3i{ Chunk.width, 0, 0 };
+            corners[2] = corners[0] + math.Vec3i{ Chunk.width, 0, Chunk.depth };
+            corners[3] = corners[0] + math.Vec3i{ 0, 0, Chunk.depth };
+            corners[4] = corners[0] + math.Vec3i{ 0, Chunk.height, 0 };
+            corners[5] = corners[4] + math.Vec3i{ Chunk.width, 0, 0 };
+            corners[6] = corners[4] + math.Vec3i{ Chunk.width, 0, Chunk.depth };
+            corners[7] = corners[4] + math.Vec3i{ 0, 0, Chunk.depth };
 
             for (corners) |corner| {
-                if (math.vec.eql(current_chunk, chunk.position) or frustum.isPointInside(math.vec.intToFloat(f32, corner))) {
+                if (math.vec.eql(current_chunk, chunk.position) or frustum.isPointInside(math.vec.cast(f32, corner))) {
                     break;
                 }
             } else {
@@ -506,16 +506,16 @@ fn fixedUpdate(self: *@This()) !void {
                     // }
                     var corners: [8]math.Vec3i = undefined;
                     corners[0] = .{ pos[0] * Chunk.width, pos[1] * Chunk.height, pos[2] * Chunk.depth };
-                    corners[1] = math.vec.add(corners[0], .{ Chunk.width, 0, 0 });
-                    corners[2] = math.vec.add(corners[0], .{ Chunk.width, 0, Chunk.depth });
-                    corners[3] = math.vec.add(corners[0], .{ 0, 0, Chunk.depth });
-                    corners[4] = math.vec.add(corners[0], .{ 0, Chunk.height, 0 });
-                    corners[5] = math.vec.add(corners[4], .{ Chunk.width, 0, 0 });
-                    corners[6] = math.vec.add(corners[4], .{ Chunk.width, 0, Chunk.depth });
-                    corners[7] = math.vec.add(corners[4], .{ 0, 0, Chunk.depth });
+                    corners[1] = corners[0] + math.Vec3i{ Chunk.width, 0, 0 };
+                    corners[2] = corners[0] + math.Vec3i{ Chunk.width, 0, Chunk.depth };
+                    corners[3] = corners[0] + math.Vec3i{ 0, 0, Chunk.depth };
+                    corners[4] = corners[0] + math.Vec3i{ 0, Chunk.height, 0 };
+                    corners[5] = corners[4] + math.Vec3i{ Chunk.width, 0, 0 };
+                    corners[6] = corners[4] + math.Vec3i{ Chunk.width, 0, Chunk.depth };
+                    corners[7] = corners[4] + math.Vec3i{ 0, 0, Chunk.depth };
 
                     for (corners) |corner| {
-                        if (frustum.isPointInside(math.vec.intToFloat(f32, corner))) {
+                        if (frustum.isPointInside(math.vec.cast(f32, corner))) {
                             try self.world.addChunk(pos);
                             break;
                         }
@@ -566,7 +566,7 @@ fn draw(self: *@This()) !void {
 
     self.scene_data.view = self.camera.viewMatrix();
     self.scene_data.proj = math.mat.perspective(std.math.degreesToRadians(80), self.window.aspectRatio(), 10000, 0.1);
-    self.scene_data.view_proj = math.mat.mul(&self.scene_data.proj, &self.scene_data.view);
+    self.scene_data.view_proj = math.mat.mul(self.scene_data.proj, self.scene_data.view);
 
     const alignment = std.mem.alignForward(vk.DeviceSize, @sizeOf(GpuSceneData), self.physical_device.properties.limits.min_uniform_buffer_offset_alignment);
     const frame_index = self.frame_number % frame_overlap;
@@ -628,7 +628,7 @@ fn draw(self: *@This()) !void {
         vkd().cmdBindIndexBuffer(cmd, chunk.index_buffer, 0, .uint16);
 
         var model = math.mat.identity(math.Mat4);
-        model = math.mat.translate(&model, .{ @floatFromInt(chunk.position[0] * Chunk.width), @floatFromInt(chunk.position[1] * Chunk.height), @floatFromInt(chunk.position[2] * Chunk.depth) });
+        model = math.mat.translate(model, .{ @floatFromInt(chunk.position[0] * Chunk.width), @floatFromInt(chunk.position[1] * Chunk.height), @floatFromInt(chunk.position[2] * Chunk.depth) });
         const push_constants: GpuPushConstants = .{ .model = model };
         vkd().cmdPushConstants(cmd, self.default_pipeline_layout, .{ .vertex_bit = true }, 0, @sizeOf(GpuPushConstants), @ptrCast(&push_constants));
 
@@ -954,7 +954,7 @@ fn createDefaultPipeline(
         .layout = layout,
         .topology = .triangle_list,
         .polygon_mode = .fill,
-        .cull_mode = .{ .back_bit = true },
+        .cull_mode = .{},
         .front_face = .counter_clockwise,
         .enable_depth = true,
         .depth_compare_op = .greater_or_equal,
