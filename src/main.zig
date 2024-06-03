@@ -28,7 +28,7 @@ pub fn main() !void {
     const window = try Window.init(allocator, 1920, 1080, "ft_vox");
 
     var engine = try Engine.init(allocator, window);
-    defer engine.deinit();
+    defer engine.deinit(allocator);
 
     try engine.run();
 

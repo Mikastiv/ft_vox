@@ -1,8 +1,9 @@
 const std = @import("std");
-const vk = @import("vulkan-zig");
+const vk = @import("vulkan");
 const vkk = @import("vk-kickstart");
 const Engine = @import("Engine.zig");
 const vk_init = @import("vk_init.zig");
+const GraphicsContext = @import("GraphicsContext.zig");
 
 const assert = std.debug.assert;
 
@@ -74,53 +75,46 @@ pub const DeletionQueue = struct {
         try self.append(buffer.memory);
     }
 
-    pub fn flush(self: *@This(), device: vk.Device) void {
-        assert(device != .null_handle);
-
+    pub fn flush(self: *@This(), ctx: *const GraphicsContext) void {
         var it = std.mem.reverseIterator(self.entries.items);
         while (it.next()) |entry| {
             switch (entry.type) {
-                .image => vkd().destroyImage(device, @enumFromInt(entry.handle), null),
-                .image_view => vkd().destroyImageView(device, @enumFromInt(entry.handle), null),
-                .fence => vkd().destroyFence(device, @enumFromInt(entry.handle), null),
-                .command_pool => vkd().destroyCommandPool(device, @enumFromInt(entry.handle), null),
-                .memory => vkd().freeMemory(device, @enumFromInt(entry.handle), null),
-                .render_pass => vkd().destroyRenderPass(device, @enumFromInt(entry.handle), null),
-                .pipeline_layout => vkd().destroyPipelineLayout(device, @enumFromInt(entry.handle), null),
-                .pipeline => vkd().destroyPipeline(device, @enumFromInt(entry.handle), null),
-                .semaphore => vkd().destroySemaphore(device, @enumFromInt(entry.handle), null),
-                .buffer => vkd().destroyBuffer(device, @enumFromInt(entry.handle), null),
-                .descriptor_set_layout => vkd().destroyDescriptorSetLayout(device, @enumFromInt(entry.handle), null),
-                .descriptor_pool => vkd().destroyDescriptorPool(device, @enumFromInt(entry.handle), null),
-                .sampler => vkd().destroySampler(device, @enumFromInt(entry.handle), null),
+                .image => ctx.device.destroyImage(@enumFromInt(entry.handle), null),
+                .image_view => ctx.device.destroyImageView(@enumFromInt(entry.handle), null),
+                .fence => ctx.device.destroyFence(@enumFromInt(entry.handle), null),
+                .command_pool => ctx.device.destroyCommandPool(@enumFromInt(entry.handle), null),
+                .memory => ctx.device.freeMemory(@enumFromInt(entry.handle), null),
+                .render_pass => ctx.device.destroyRenderPass(@enumFromInt(entry.handle), null),
+                .pipeline_layout => ctx.device.destroyPipelineLayout(@enumFromInt(entry.handle), null),
+                .pipeline => ctx.device.destroyPipeline(@enumFromInt(entry.handle), null),
+                .semaphore => ctx.device.destroySemaphore(@enumFromInt(entry.handle), null),
+                .buffer => ctx.device.destroyBuffer(@enumFromInt(entry.handle), null),
+                .descriptor_set_layout => ctx.device.destroyDescriptorSetLayout(@enumFromInt(entry.handle), null),
+                .descriptor_pool => ctx.device.destroyDescriptorPool(@enumFromInt(entry.handle), null),
+                .sampler => ctx.device.destroySampler(@enumFromInt(entry.handle), null),
             }
         }
         self.entries.clearRetainingCapacity();
     }
 };
 
-pub fn createShaderModule(device: vk.Device, bytecode: []align(4) const u8) !vk.ShaderModule {
-    assert(device != .null_handle);
-
+pub fn createShaderModule(ctx: *const GraphicsContext, bytecode: []align(4) const u8) !vk.ShaderModule {
     const create_info = vk.ShaderModuleCreateInfo{
         .code_size = bytecode.len,
         .p_code = std.mem.bytesAsSlice(u32, bytecode).ptr,
     };
 
-    return vkd().createShaderModule(device, &create_info, null);
+    return ctx.device.createShaderModule(&create_info, null);
 }
 
-pub fn destroyImageViews(device: vk.Device, image_views: []const vk.ImageView) void {
-    assert(device != .null_handle);
-
+pub fn destroyImageViews(ctx: *const GraphicsContext, image_views: []const vk.ImageView) void {
     for (image_views) |view| {
         assert(view != .null_handle);
-        vkd().destroyImageView(device, view, null);
+        ctx.device.destroyImageView(view, null);
     }
 }
 
-pub fn defaultRenderPass(device: vk.Device, image_format: vk.Format, depth_format: vk.Format) !vk.RenderPass {
-    assert(device != .null_handle);
+pub fn defaultRenderPass(ctx: *const GraphicsContext, image_format: vk.Format, depth_format: vk.Format) !vk.RenderPass {
     assert(image_format != .undefined);
     assert(depth_format != .undefined);
 
@@ -192,18 +186,17 @@ pub fn defaultRenderPass(device: vk.Device, image_format: vk.Format, depth_forma
         .p_dependencies = &dependencies,
     };
 
-    return vkd().createRenderPass(device, &render_pass_info, null);
+    return ctx.device.createRenderPass(&render_pass_info, null);
 }
 
 pub fn createFramebuffers(
-    device: vk.Device,
+    ctx: *const GraphicsContext,
     render_pass: vk.RenderPass,
     extent: vk.Extent2D,
     image_views: []const vk.ImageView,
     depth_image_view: vk.ImageView,
     buffer: []vk.Framebuffer,
 ) !void {
-    assert(device != .null_handle);
     assert(render_pass != .null_handle);
     assert(extent.width > 0);
     assert(extent.height > 0);
@@ -214,7 +207,7 @@ pub fn createFramebuffers(
     var initialized_count: u32 = 0;
     errdefer {
         for (0..initialized_count) |i| {
-            vkd().destroyFramebuffer(device, buffer[i], null);
+            ctx.device.destroyFramebuffer(buffer[i], null);
         }
     }
 
@@ -229,20 +222,20 @@ pub fn createFramebuffers(
         const attachments = [_]vk.ImageView{ image_views[i], depth_image_view };
         framebuffer_info.attachment_count = attachments.len;
         framebuffer_info.p_attachments = &attachments;
-        buffer[i] = try vkd().createFramebuffer(device, &framebuffer_info, null);
+        buffer[i] = try ctx.device.createFramebuffer(&framebuffer_info, null);
         initialized_count += 1;
     }
 }
 
-pub fn destroyImage(device: vk.Device, image: Engine.AllocatedImage) void {
-    vkd().destroyImageView(device, image.view, null);
-    vkd().destroyImage(device, image.handle, null);
-    vkd().freeMemory(device, image.memory, null);
+pub fn destroyImage(ctx: *const GraphicsContext, image: Engine.AllocatedImage) void {
+    ctx.device.destroyImageView(image.view, null);
+    ctx.device.destroyImage(image.handle, null);
+    ctx.device.freeMemory(image.memory, null);
 }
 
-pub fn destroyFrameBuffers(device: vk.Device, framebuffers: []const vk.Framebuffer) void {
+pub fn destroyFrameBuffers(ctx: *const GraphicsContext, framebuffers: []const vk.Framebuffer) void {
     for (framebuffers) |framebuffer| {
-        vkd().destroyFramebuffer(device, framebuffer, null);
+        ctx.device.destroyFramebuffer(framebuffer, null);
     }
 }
 
@@ -255,13 +248,12 @@ pub fn scale(comptime T: type, value: T, factor: f32) T {
 }
 
 pub fn allocateMemory(
-    device: vk.Device,
-    physical_device: vk.PhysicalDevice,
+    ctx: *const GraphicsContext,
     buffer: vk.Buffer,
     property_flags: vk.MemoryPropertyFlags,
 ) !Engine.AllocatedMemory {
-    const requirements = vkd().getBufferMemoryRequirements(device, buffer);
-    const memory_properties = vki().getPhysicalDeviceMemoryProperties(physical_device);
+    const requirements = ctx.device.getBufferMemoryRequirements(buffer);
+    const memory_properties = ctx.instance.getPhysicalDeviceMemoryProperties(ctx.physical_device.handle);
 
     const memory_type = findMemoryType(
         memory_properties,
@@ -273,7 +265,7 @@ pub fn allocateMemory(
         .allocation_size = requirements.size,
         .memory_type_index = memory_type,
     };
-    const memory = try vkd().allocateMemory(device, &alloc_info, null);
+    const memory = try ctx.device.allocateMemory(&alloc_info, null);
 
     return .{
         .handle = memory,
@@ -283,25 +275,21 @@ pub fn allocateMemory(
 }
 
 pub fn createBuffer(
-    device: vk.Device,
-    physical_device: vk.PhysicalDevice,
+    ctx: *const GraphicsContext,
     size: vk.DeviceSize,
     usage: vk.BufferUsageFlags,
     property_flags: vk.MemoryPropertyFlags,
 ) !Engine.AllocatedBuffer {
-    assert(device != .null_handle);
-    assert(physical_device != .null_handle);
-
     const create_info: vk.BufferCreateInfo = .{
         .size = size,
         .usage = usage,
         .sharing_mode = .exclusive,
     };
-    const buffer = try vkd().createBuffer(device, &create_info, null);
-    errdefer vkd().destroyBuffer(device, buffer, null);
+    const buffer = try ctx.device.createBuffer(&create_info, null);
+    errdefer ctx.device.destroyBuffer(buffer, null);
 
-    const requirements = vkd().getBufferMemoryRequirements(device, buffer);
-    const memory_properties = vki().getPhysicalDeviceMemoryProperties(physical_device);
+    const requirements = ctx.device.getBufferMemoryRequirements(buffer);
+    const memory_properties = ctx.instance.getPhysicalDeviceMemoryProperties(ctx.physical_device.handle);
 
     const memory_type = findMemoryType(
         memory_properties,
@@ -313,10 +301,10 @@ pub fn createBuffer(
         .allocation_size = requirements.size,
         .memory_type_index = memory_type,
     };
-    const memory = try vkd().allocateMemory(device, &alloc_info, null);
-    errdefer vkd().freeMemory(device, memory, null);
+    const memory = try ctx.device.allocateMemory(&alloc_info, null);
+    errdefer ctx.device.freeMemory(memory, null);
 
-    try vkd().bindBufferMemory(device, buffer, memory, 0);
+    try ctx.device.bindBufferMemory(buffer, memory, 0);
 
     return .{
         .handle = buffer,
@@ -326,8 +314,7 @@ pub fn createBuffer(
 }
 
 pub fn createImage(
-    device: vk.Device,
-    physical_device: vk.PhysicalDevice,
+    ctx: *const GraphicsContext,
     format: vk.Format,
     usage: vk.ImageUsageFlags,
     extent: vk.Extent3D,
@@ -337,16 +324,14 @@ pub fn createImage(
     layer_count: u32,
     flags: vk.ImageCreateFlags,
 ) !Engine.AllocatedImage {
-    assert(device != .null_handle);
-    assert(physical_device != .null_handle);
     assert(format != .undefined);
 
     const image_info = vk_init.imageCreateInfo(format, usage, extent, layer_count, flags);
-    const image = try vkd().createImage(device, &image_info, null);
-    errdefer vkd().destroyImage(device, image, null);
+    const image = try ctx.device.createImage(&image_info, null);
+    errdefer ctx.device.destroyImage(image, null);
 
-    const requirements = vkd().getImageMemoryRequirements(device, image);
-    const memory_properties = vki().getPhysicalDeviceMemoryProperties(physical_device);
+    const requirements = ctx.device.getImageMemoryRequirements(image);
+    const memory_properties = ctx.instance.getPhysicalDeviceMemoryProperties(ctx.physical_device.handle);
 
     const memory_type = findMemoryType(
         memory_properties,
@@ -358,14 +343,14 @@ pub fn createImage(
         .allocation_size = requirements.size,
         .memory_type_index = memory_type,
     };
-    const memory = try vkd().allocateMemory(device, &alloc_info, null);
-    errdefer vkd().freeMemory(device, memory, null);
+    const memory = try ctx.device.allocateMemory(&alloc_info, null);
+    errdefer ctx.device.freeMemory(memory, null);
 
-    try vkd().bindImageMemory(device, image, memory, 0);
+    try ctx.device.bindImageMemory(image, memory, 0);
 
     const image_view_info = vk_init.imageViewCreateInfo(format, image, aspect_flags, view_type, layer_count);
-    const image_view = try vkd().createImageView(device, &image_view_info, null);
-    errdefer vkd().destroyImageView(device, image_view, null);
+    const image_view = try ctx.device.createImageView(&image_view_info, null);
+    errdefer ctx.device.destroyImageView(image_view, null);
 
     return .{
         .handle = image,

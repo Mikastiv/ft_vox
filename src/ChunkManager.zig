@@ -72,17 +72,21 @@ pub fn update(self: *@This(), camera: *const Camera) !void {
     try self.generate_queue.replaceRange(0, generate_count, &.{});
 
     self.updateVisibleList(camera);
-    self.updateRenderList(camera);
     self.updateUploadQueue();
+    self.updateRenderList(camera);
 
     const upload_count = @min(max_upload_per_update, self.upload_queue.items.len);
     for (0..upload_count) |i| {
+        _ = i; // autofix
         // upload
     }
     try self.upload_queue.replaceRange(0, upload_count, &.{});
 }
 
-fn updateRenderList(self: *@This(), camera: *const Camera) void {}
+fn updateRenderList(self: *@This(), camera: *const Camera) void {
+    _ = self; // autofix
+    _ = camera; // autofix
+}
 
 fn updateVisibleList(self: *@This(), camera: *const Camera) void {
     const current_chunk = math.vec.floatToInt(math.Vec3i, camera.pos);

@@ -1,6 +1,6 @@
 const std = @import("std");
 const c = @import("c.zig");
-const vk = @import("vulkan-zig");
+const vk = @import("vulkan");
 const math = @import("mksv").math;
 
 const assert = std.debug.assert;

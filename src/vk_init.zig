@@ -1,4 +1,4 @@
-const vk = @import("vulkan-zig");
+const vk = @import("vulkan");
 
 pub fn commandBufferAllocateInfo(command_pool: vk.CommandPool) vk.CommandBufferAllocateInfo {
     return .{

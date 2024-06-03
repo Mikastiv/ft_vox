@@ -47,7 +47,7 @@ pub fn build(b: *std.Build) void {
     });
     cimgui.linkLibCpp();
     cimgui.linkLibrary(glfw);
-    cimgui.addIncludePath(.{ .path = "lib/imgui" });
+    cimgui.addIncludePath(b.path("lib/imgui"));
     cimgui.addCSourceFiles(.{
         .files = &.{
             "lib/cimgui/cimgui.cpp",
@@ -65,7 +65,7 @@ pub fn build(b: *std.Build) void {
 
     const exe = b.addExecutable(.{
         .name = "ft_vox",
-        .root_source_file = .{ .path = "src/main.zig" },
+        .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -73,15 +73,15 @@ pub fn build(b: *std.Build) void {
     exe.linkLibCpp();
     exe.linkLibrary(glfw);
     exe.linkLibrary(cimgui);
-    exe.addIncludePath(.{ .path = b.pathJoin(&.{ vulkan_sdk, "include" }) });
-    exe.addLibraryPath(.{ .path = b.pathJoin(&.{ vulkan_sdk, "lib" }) });
+    exe.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ vulkan_sdk, "include" }) });
+    exe.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ vulkan_sdk, "lib" }) });
     exe.linkSystemLibrary(vulkan_lib);
-    exe.addIncludePath(.{ .path = "lib/cimgui" });
-    exe.addIncludePath(.{ .path = "lib/imgui" });
-    exe.addIncludePath(.{ .path = "lib/stb_image" });
+    exe.addIncludePath(b.path("lib/cimgui"));
+    exe.addIncludePath(b.path("lib/imgui"));
+    exe.addIncludePath(b.path("lib/stb_image"));
     exe.addCSourceFile(.{ .file = stb_image });
     exe.root_module.addImport("vk-kickstart", vk_kickstart.module("vk-kickstart"));
-    exe.root_module.addImport("vulkan-zig", vkzig.module("vulkan-zig"));
+    exe.root_module.addImport("vulkan", vkzig.module("vulkan-zig"));
     exe.root_module.addImport("mksv", mksv.module("mksv"));
     exe.root_module.addImport("shaders", shaders.getModule());
 
@@ -98,7 +98,7 @@ pub fn build(b: *std.Build) void {
     run_step.dependOn(&run_cmd.step);
 
     const exe_unit_tests = b.addTest(.{
-        .root_source_file = .{ .path = "src/main.zig" },
+        .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });

@@ -1,7 +1,8 @@
 const std = @import("std");
-const vk = @import("vulkan-zig");
+const vk = @import("vulkan");
 const vkk = @import("vk-kickstart");
 const mesh = @import("mesh.zig");
+const GraphicsContext = @import("GraphicsContext.zig");
 
 const assert = std.debug.assert;
 
@@ -131,8 +132,7 @@ pub const Builder = struct {
         };
     }
 
-    pub fn build(self: *const @This(), device: vk.Device) !vk.Pipeline {
-        assert(device != .null_handle);
+    pub fn build(self: *const @This(), ctx: *const GraphicsContext) !vk.Pipeline {
         assert(self.render_pass != .null_handle);
         assert(self.layout != .null_handle);
         assert(self.shader_stages[0].module != .null_handle);
@@ -184,7 +184,7 @@ pub const Builder = struct {
         };
 
         var pipeline: vk.Pipeline = undefined;
-        const result = try vkd().createGraphicsPipelines(device, .null_handle, 1, @ptrCast(&pipeline_info), null, @ptrCast(&pipeline));
+        const result = try ctx.device.createGraphicsPipelines(.null_handle, 1, @ptrCast(&pipeline_info), null, @ptrCast(&pipeline));
         if (result != .success) return error.PipelineCreateFailed;
         return pipeline;
     }

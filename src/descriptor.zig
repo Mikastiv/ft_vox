@@ -1,11 +1,10 @@
 const std = @import("std");
-const vk = @import("vulkan-zig");
+const vk = @import("vulkan");
 const vkk = @import("vk-kickstart");
 const vk_utils = @import("vk_utils.zig");
+const GraphicsContext = @import("GraphicsContext.zig");
 
 const assert = std.debug.assert;
-
-const vkd = vkk.dispatch.vkd;
 
 pub const LayoutBuilder = struct {
     bindings: std.ArrayList(vk.DescriptorSetLayoutBinding),
@@ -34,9 +33,7 @@ pub const LayoutBuilder = struct {
         try self.bindings.append(new_binding);
     }
 
-    pub fn build(self: *const @This(), device: vk.Device, shader_stages: vk.ShaderStageFlags) !vk.DescriptorSetLayout {
-        assert(device != .null_handle);
-
+    pub fn build(self: *const @This(), ctx: *const GraphicsContext, shader_stages: vk.ShaderStageFlags) !vk.DescriptorSetLayout {
         for (self.bindings.items) |*binding| {
             binding.stage_flags = shader_stages;
         }
@@ -46,7 +43,7 @@ pub const LayoutBuilder = struct {
             .p_bindings = self.bindings.items.ptr,
         };
 
-        return vkd().createDescriptorSetLayout(device, &create_info, null);
+        return ctx.device.createDescriptorSetLayout(&create_info, null);
     }
 };
 
@@ -60,12 +57,10 @@ pub const Allocator = struct {
 
     pub fn init(
         allocator: std.mem.Allocator,
-        device: vk.Device,
+        ctx: *const GraphicsContext,
         max_sets: u32,
         pool_ratios: []const PoolSizeRatio,
     ) !@This() {
-        assert(device != .null_handle);
-
         const pool_sizes = try allocator.alloc(vk.DescriptorPoolSize, pool_ratios.len);
 
         for (0..pool_ratios.len) |i| {
@@ -79,20 +74,18 @@ pub const Allocator = struct {
             .p_pool_sizes = pool_sizes.ptr,
         };
 
-        const pool = try vkd().createDescriptorPool(device, &pool_info, null);
+        const pool = try ctx.device.createDescriptorPool(&pool_info, null);
 
         return .{ .pool = pool };
     }
 
-    pub fn clearDescriptors(self: *@This(), device: vk.Device) !void {
-        assert(device != .null_handle);
+    pub fn clearDescriptors(self: *@This(), ctx: *const GraphicsContext) !void {
         assert(self.pool != .null_handle);
 
-        try vkd().resetDescriptorPool(device, self.pool, .{});
+        try ctx.device.resetDescriptorPool(self.pool, .{});
     }
 
-    pub fn alloc(self: *const @This(), device: vk.Device, layout: vk.DescriptorSetLayout) !vk.DescriptorSet {
-        assert(device != .null_handle);
+    pub fn alloc(self: *const @This(), ctx: *const GraphicsContext, layout: vk.DescriptorSetLayout) !vk.DescriptorSet {
         assert(self.pool != .null_handle);
         assert(layout != .null_handle);
 
@@ -103,7 +96,7 @@ pub const Allocator = struct {
         };
 
         var descriptor_set: vk.DescriptorSet = undefined;
-        try vkd().allocateDescriptorSets(device, &alloc_info, @ptrCast(&descriptor_set));
+        try ctx.device.allocateDescriptorSets(&alloc_info, @ptrCast(&descriptor_set));
         return descriptor_set;
     }
 };
@@ -223,14 +216,13 @@ pub const Writer = struct {
         self.writes.clearRetainingCapacity();
     }
 
-    pub fn updateSet(self: *@This(), device: vk.Device, set: vk.DescriptorSet) void {
-        assert(device != .null_handle);
+    pub fn updateSet(self: *@This(), ctx: *const GraphicsContext, set: vk.DescriptorSet) void {
         assert(set != .null_handle);
 
         for (self.writes.items) |*write| {
             write.dst_set = set;
         }
 
-        vkd().updateDescriptorSets(device, @intCast(self.writes.items.len), self.writes.items.ptr, 0, null);
+        ctx.device.updateDescriptorSets(@intCast(self.writes.items.len), self.writes.items.ptr, 0, null);
     }
 };

@@ -115,7 +115,7 @@ const Texture = enum(u8) {
 };
 
 const block_textures_folder = "assets/blocks/";
-pub const texture_names = std.ComptimeStringMap(Texture, .{
+pub const texture_names = std.StaticStringMap(Texture).initComptime(.{
     .{ block_textures_folder ++ "bricks.png", .bricks },
     .{ block_textures_folder ++ "coal_ore.png", .coal_ore },
     .{ block_textures_folder ++ "cobblestone.png", .cobblestone },

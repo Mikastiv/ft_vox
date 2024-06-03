@@ -1,5 +1,5 @@
 const std = @import("std");
-const vk = @import("vulkan-zig");
+const vk = @import("vulkan");
 const math = @import("mksv").math;
 const Block = @import("Block.zig");
 const Chunk = @import("Chunk.zig");

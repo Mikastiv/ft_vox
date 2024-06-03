@@ -1,12 +1,13 @@
 const std = @import("std");
 const Chunk = @import("Chunk.zig");
-const vk = @import("vulkan-zig");
+const vk = @import("vulkan");
 const vkk = @import("vk-kickstart");
 const Engine = @import("Engine.zig");
 const vk_utils = @import("vk_utils.zig");
 const mesh = @import("mesh.zig");
 const math = @import("mksv").math;
 const Heightmap = @import("Heightmap.zig");
+const GraphicsContext = @import("GraphicsContext.zig");
 
 const assert = std.debug.assert;
 const vkd = vkk.dispatch.vkd;
@@ -42,7 +43,7 @@ heightmap: Heightmap,
 
 pub fn init(
     allocator: std.mem.Allocator,
-    device: vk.Device,
+    ctx: *const GraphicsContext,
     vertex_memory: Engine.AllocatedMemory,
     index_memory: Engine.AllocatedMemory,
     deletion_queue: *vk_utils.DeletionQueue,
@@ -75,20 +76,20 @@ pub fn init(
             .usage = .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
             .sharing_mode = .exclusive,
         };
-        self.vertex_buffers[i] = try vkd().createBuffer(device, &vertex_buffer_info, null);
+        self.vertex_buffers[i] = try ctx.device.createBuffer(&vertex_buffer_info, null);
         try deletion_queue.append(self.vertex_buffers[i]);
         self.vertex_buffer_offsets[i] = i * std.mem.alignForward(vk.DeviceSize, Chunk.vertex_buffer_size, vertex_memory.alignment);
-        try vkd().bindBufferMemory(device, self.vertex_buffers[i], vertex_memory.handle, self.vertex_buffer_offsets[i]);
+        try ctx.device.bindBufferMemory(self.vertex_buffers[i], vertex_memory.handle, self.vertex_buffer_offsets[i]);
 
         const index_buffer_info: vk.BufferCreateInfo = .{
             .size = Chunk.index_buffer_size,
             .usage = .{ .transfer_dst_bit = true, .index_buffer_bit = true },
             .sharing_mode = .exclusive,
         };
-        self.index_buffers[i] = try vkd().createBuffer(device, &index_buffer_info, null);
+        self.index_buffers[i] = try ctx.device.createBuffer(&index_buffer_info, null);
         try deletion_queue.append(self.index_buffers[i]);
         self.index_buffer_offsets[i] = i * std.mem.alignForward(vk.DeviceSize, Chunk.index_buffer_size, index_memory.alignment);
-        try vkd().bindBufferMemory(device, self.index_buffers[i], index_memory.handle, self.index_buffer_offsets[i]);
+        try ctx.device.bindBufferMemory(self.index_buffers[i], index_memory.handle, self.index_buffer_offsets[i]);
     }
 
     return self;
@@ -125,16 +126,16 @@ pub fn removeChunk(self: *@This(), pos: math.Vec3i) void {
     }
 }
 
-pub fn uploadChunkFromQueue(self: *@This(), device: vk.Device, cmd: vk.CommandBuffer, staging_buffer: Engine.AllocatedBuffer) !bool {
+pub fn uploadChunkFromQueue(self: *@This(), ctx: *const GraphicsContext, cmd: vk.CommandBuffer, staging_buffer: Engine.AllocatedBuffer) !bool {
     if (self.upload_queue.len == 0) return false;
 
     const pos = self.upload_queue.orderedRemove(0);
-    try self.uploadChunk(device, pos, cmd, staging_buffer);
+    try self.uploadChunk(ctx, pos, cmd, staging_buffer);
 
     return true;
 }
 
-fn uploadChunk(self: *@This(), device: vk.Device, pos: math.Vec3i, cmd: vk.CommandBuffer, staging_buffer: Engine.AllocatedBuffer) !void {
+fn uploadChunk(self: *@This(), ctx: *const GraphicsContext, pos: math.Vec3i, cmd: vk.CommandBuffer, staging_buffer: Engine.AllocatedBuffer) !void {
     const idx = self.chunk_mapping.get(pos) orelse @panic("no chunk");
     assert(self.states[idx] != .empty);
 
@@ -169,19 +170,21 @@ fn uploadChunk(self: *@This(), device: vk.Device, pos: math.Vec3i, cmd: vk.Comma
     if (indices.len == 0) return;
 
     {
-        const data = try vkd().mapMemory(device, staging_buffer.memory, 0, vertex_size + index_size, .{});
-        defer vkd().unmapMemory(device, staging_buffer.memory);
+        const data = try ctx.device.mapMemory(staging_buffer.memory, 0, vertex_size + index_size, .{});
+        defer ctx.device.unmapMemory(staging_buffer.memory);
 
         const ptr: [*]u8 = @ptrCast(@alignCast(data));
         @memcpy(ptr[0..vertex_size], std.mem.sliceAsBytes(vertices));
         @memcpy(ptr[vertex_size .. vertex_size + index_size], std.mem.sliceAsBytes(indices));
     }
 
+    const cmd_proxy = GraphicsContext.CommandBuffer.init(cmd, ctx.vkd);
+
     const vertex_copy = vk.BufferCopy{ .size = vertex_size, .src_offset = 0, .dst_offset = 0 };
-    vkd().cmdCopyBuffer(cmd, staging_buffer.handle, self.vertex_buffers[idx], 1, @ptrCast(&vertex_copy));
+    cmd_proxy.copyBuffer(staging_buffer.handle, self.vertex_buffers[idx], 1, @ptrCast(&vertex_copy));
 
     const index_copy = vk.BufferCopy{ .size = index_size, .src_offset = vertex_size, .dst_offset = 0 };
-    vkd().cmdCopyBuffer(cmd, staging_buffer.handle, self.index_buffers[idx], 1, @ptrCast(&index_copy));
+    cmd_proxy.copyBuffer(staging_buffer.handle, self.index_buffers[idx], 1, @ptrCast(&index_copy));
 }
 
 fn freeSlot(self: *const @This()) ?usize {
