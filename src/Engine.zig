@@ -120,24 +120,30 @@ swapchain_resize_requested: bool = false,
 pub fn init(allocator: std.mem.Allocator, window: *Window) !@This() {
     const ctx = try GraphicsContext.init(allocator, window);
 
-    const swapchain = try vkk.Swapchain.create(ctx.device.handle, ctx.physical_device.handle, ctx.surface, .{
-        .graphics_queue_index = ctx.graphics_queue_index,
-        .present_queue_index = ctx.present_queue_index,
-        .desired_extent = window.extent(),
-        .desired_formats = &.{
-            .{ .format = .b8g8r8a8_unorm, .color_space = .srgb_nonlinear_khr },
+    const swapchain = try vkk.Swapchain.create(
+        ctx.device.handle,
+        ctx.physical_device.handle,
+        ctx.surface,
+        .{
+            .graphics_queue_index = ctx.graphics_queue_index,
+            .present_queue_index = ctx.present_queue_index,
+            .desired_extent = window.extent(),
+            .desired_formats = &.{
+                .{ .format = .b8g8r8a8_unorm, .color_space = .srgb_nonlinear_khr },
+            },
+            .desired_present_modes = &.{
+                .fifo_khr,
+            },
         },
-        .desired_present_modes = &.{
-            .fifo_khr,
-        },
-    });
-    errdefer swapchain.destroy();
+        null,
+    );
+    errdefer ctx.device.destroySwapchainKHR(swapchain.handle, null);
 
     const images = try allocator.alloc(vk.Image, swapchain.image_count);
     try swapchain.getImages(images);
 
     const image_views = try allocator.alloc(vk.ImageView, swapchain.image_count);
-    try swapchain.getImageViews(images, image_views);
+    try swapchain.getImageViews(images, image_views, null);
     errdefer vk_utils.destroyImageViews(&ctx, image_views);
 
     const depth_image = try createDepthImage(&ctx, .d32_sfloat, swapchain.extent);
@@ -350,7 +356,7 @@ pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
     vk_utils.destroyFrameBuffers(&self.ctx, self.framebuffers);
     vk_utils.destroyImage(&self.ctx, self.depth_image);
     vk_utils.destroyImageViews(&self.ctx, self.swapchain_image_views);
-    self.swapchain.destroy();
+    self.ctx.device.destroySwapchainKHR(self.swapchain.handle, null);
     self.ctx.deinit(allocator);
     self.window.deinit();
 }
@@ -658,22 +664,28 @@ fn recreateSwapchain(self: *@This()) !void {
     vk_utils.destroyFrameBuffers(&self.ctx, self.framebuffers);
 
     const old_swapchain = self.swapchain;
-    self.swapchain = try vkk.Swapchain.create(self.ctx.device.handle, self.ctx.physical_device.handle, self.ctx.surface, .{
-        .graphics_queue_index = self.ctx.graphics_queue_index,
-        .present_queue_index = self.ctx.present_queue_index,
-        .desired_extent = self.window.extent(),
-        .desired_formats = &.{
-            .{ .format = .b8g8r8a8_unorm, .color_space = .srgb_nonlinear_khr },
+    self.swapchain = try vkk.Swapchain.create(
+        self.ctx.device.handle,
+        self.ctx.physical_device.handle,
+        self.ctx.surface,
+        .{
+            .graphics_queue_index = self.ctx.graphics_queue_index,
+            .present_queue_index = self.ctx.present_queue_index,
+            .desired_extent = self.window.extent(),
+            .desired_formats = &.{
+                .{ .format = .b8g8r8a8_unorm, .color_space = .srgb_nonlinear_khr },
+            },
+            .desired_present_modes = &.{
+                .fifo_khr,
+            },
+            .old_swapchain = old_swapchain.handle,
         },
-        .desired_present_modes = &.{
-            .fifo_khr,
-        },
-        .old_swapchain = old_swapchain.handle,
-    });
-    old_swapchain.destroy();
+        null,
+    );
+    self.ctx.device.destroySwapchainKHR(old_swapchain.handle, null);
 
     try self.swapchain.getImages(self.swapchain_images);
-    try self.swapchain.getImageViews(self.swapchain_images, self.swapchain_image_views);
+    try self.swapchain.getImageViews(self.swapchain_images, self.swapchain_image_views, null);
     self.depth_image = try createDepthImage(&self.ctx, self.depth_image.format, self.swapchain.extent);
     try vk_utils.createFramebuffers(&self.ctx, self.render_pass, self.swapchain.extent, self.swapchain_image_views, self.depth_image.view, self.framebuffers);
 }
