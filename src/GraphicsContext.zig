@@ -34,7 +34,7 @@ pub fn init(allocator: std.mem.Allocator, window: *const Window) !GraphicsContex
 
     const instance_handle = try vkk.instance.create(
         c.glfwGetInstanceProcAddress,
-        .{ .required_api_version = vk.API_VERSION_1_3 },
+        .{ .required_api_version = vk.API_VERSION_1_2 },
         null,
     );
     vki.* = try InstanceDispatch.load(instance_handle, c.glfwGetInstanceProcAddress);
@@ -49,21 +49,6 @@ pub fn init(allocator: std.mem.Allocator, window: *const Window) !GraphicsContex
 
     const physical_device = try vkk.PhysicalDevice.select(instance.handle, .{
         .surface = surface,
-        .transfer_queue = .dedicated,
-        .required_api_version = vk.API_VERSION_1_2,
-        .required_extensions = &.{
-            vk.extensions.khr_ray_tracing_pipeline.name,
-            vk.extensions.khr_acceleration_structure.name,
-            vk.extensions.khr_deferred_host_operations.name,
-            vk.extensions.khr_buffer_device_address.name,
-            vk.extensions.ext_descriptor_indexing.name,
-        },
-        .required_features = .{
-            .sampler_anisotropy = vk.TRUE,
-        },
-        .required_features_12 = .{
-            .descriptor_indexing = vk.TRUE,
-        },
     });
 
     std.log.info("selected {s}", .{physical_device.name()});
